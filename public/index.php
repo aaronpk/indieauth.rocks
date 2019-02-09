@@ -1,7 +1,7 @@
 <?php
 include(__DIR__.'/../lib/config.php');
 
-$SCHEME = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? 'http';
+$SCHEME = $_SERVER['HTTPS'] ? 'https' : 'http';
 $HOST = $_SERVER['HTTP_HOST'];
 $PATH = $_SERVER['REQUEST_URI'];
 $URL = $SCHEME.'://'.$HOST.$PATH;

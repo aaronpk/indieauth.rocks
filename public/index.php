@@ -13,6 +13,8 @@ $request = Laminas\Diactoros\ServerRequestFactory::fromGlobals(
 $router = new League\Route\Router;
 
 $router->map('GET', '/', 'App\\Controller::index');
+$router->map('GET', '/client', 'App\\Controller::client');
+$router->map('GET', '/server', 'App\\Controller::server');
 
 
 

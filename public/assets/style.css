@@ -14,6 +14,18 @@ body {
   max-width: 600px;
 }
 
+#header-graphic {
+  max-width: 600px;
+  margin-top: -60px;
+  margin-bottom: -80px;
+  z-index: -1000;
+  position: relative;
+}
+#header-graphic img {
+  max-width: 600px;
+  width: 100%;
+}
+
 section.content {
   padding: 10px;
   border-radius: 4px;

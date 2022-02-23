@@ -15,6 +15,7 @@
     </div>
   <? endif; ?>
 
+  <!--
   <? if(!is_logged_in()): ?>
     <section class="content">
       <h3>Sign in to begin</h3>
@@ -30,15 +31,16 @@
       <p>You will receive an email with a link to sign in.</p>
     </section>
   <? endif; ?>
+  -->
 
   <section class="content">
     <h2>Roles</h2>
 
     <h3><a href="/server">Testing your Server</a></h3>
-    <p>This section contains tests for your server.</p>
+    <p>These tests will help you build an IndieAuth server by providing many different types of IndieAuth clients you may encounter in the wild.</p>
 
     <h3><a href="/client">Testing your Client</a></h3>
-    <p>If you are building an IndieAuth client, you can use these tests to make sure you are able to handle all types of IndieAuth servers you may encounter in the wild.</p>
+    <p>These tests will help you build an IndieAuth client by making sure you are able to handle all types of IndieAuth servers you may encounter in the wild.</p>
 
   </section>
 

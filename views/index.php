@@ -45,7 +45,6 @@
   </section>
 
 
-
   <section class="content small">
     <p>This code is <a href="https://github.com/aaronpk/indieauth.rocks">open source</a>. Feel free to <a href="https://github.com/aaronpk/indieauth.rocks/issues">file an issue</a> if you notice any errors.</p>
   </section>

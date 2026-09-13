@@ -141,6 +141,12 @@ final class ServerRunnerTest extends AppTestCase
 
         $this->assertTrue($run->state['flags']['burns_on_failure'] ?? false);
 
+        // Each extra approval is asked for exactly once.
+        $steps = array_count_values(array_column($run->state['attempts'], 'step'));
+        foreach (['login', 'c2', 'c2b', 'c3', 'c3b'] as $step) {
+            $this->assertSame(1, $steps[$step] ?? 0, $step);
+        }
+
         foreach (['S302', 'S310', 'S311', 'S312', 'S313', 'S320'] as $id) {
             $this->assertSame('pass', $outcomes[$id] ?? 'missing', $id);
         }

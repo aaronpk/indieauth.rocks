@@ -22,6 +22,8 @@ final class Application
         'migrate' => 'Apply pending database migrations',
         'doctor'  => 'Check configuration, database, Redis and hostnames',
         'catalog' => 'List tests: catalog [--suite=server|client] [--format=text|md]',
+        'run-server' => 'Run the server suite: run-server <profile-url> [--driver=myindieauth] [--extended] [--json]',
+        'driver:myindieauth:enroll' => 'Create a driver account on a myindieauth server: --base=URL [--profile=URL]',
         'help'    => 'Show this list',
     ];
 
@@ -43,6 +45,8 @@ final class Application
                 'migrate'              => $this->migrate(),
                 'doctor'               => $this->doctor(),
                 'catalog'              => $this->catalog($args),
+                'run-server'           => (new RunServerCommand($this->out, $this->container))->run($args),
+                'driver:myindieauth:enroll' => (new EnrollCommand($this->out, $this->container->get(SiteConfig::class)))->run($args),
                 'help', '--help', '-h' => $this->help(),
                 default                => $this->unknown($command),
             };

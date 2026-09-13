@@ -9,6 +9,7 @@ use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Controllers\AccountController;
 use IndieAuthRocks\Controllers\AltController;
 use IndieAuthRocks\Controllers\CatalogController;
+use IndieAuthRocks\Controllers\FixtureController;
 use IndieAuthRocks\Controllers\ServerRunController;
 use IndieAuthRocks\Controllers\ClientDocsController;
 use IndieAuthRocks\Controllers\HomeController;
@@ -140,6 +141,8 @@ final class Bootstrap
             $c->get(RunRepository::class),
         ));
 
+        $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
+
         $container->set(ClientDocsController::class, static fn (Container $c): ClientDocsController => new ClientDocsController(
             $c->get(SiteConfig::class),
             $c->get(RunRepository::class),
@@ -194,7 +197,11 @@ final class Bootstrap
 
     public static function fixtureRouter(): Router
     {
-        return new Router();
+        $router = new Router();
+
+        $router->get('/', [FixtureController::class, 'home']);
+
+        return $router;
     }
 
     public static function hostRouter(SiteConfig $config): HostRouter

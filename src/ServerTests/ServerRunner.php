@@ -737,7 +737,7 @@ final class ServerRunner
                 $this->results->record($run->id, Verdict::skipped($id, 'Inconclusive: the code was no longer valid after an earlier rejected attempt. Run the extended tests to check this separately.'), $step);
             }
 
-            array_unshift($state['queue'], 'c3b');
+            // c3b is already queued; it runs now that burning is known.
             $message = 'Your server stopped accepting that code after a failed attempt. One more approval is needed.';
 
             return;

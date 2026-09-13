@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace IndieAuthRocks\Tests\Support;
+namespace IndieAuthRocks\Drivers\MyIndieAuth;
 
 use OpenSSLAsymmetricKey;
 use RuntimeException;
@@ -31,18 +31,41 @@ final class SoftwareAuthenticator
     public function __construct(
         private readonly string $relyingPartyId = 'localhost',
         private readonly string $origin = 'http://localhost:7777',
+        ?OpenSSLAsymmetricKey $key = null,
+        ?string $credentialId = null,
+        int $signCount = 0,
     ) {
-        $key = openssl_pkey_new([
+        $key ??= openssl_pkey_new([
             'private_key_type' => OPENSSL_KEYTYPE_EC,
             'curve_name'       => 'prime256v1',
         ]);
 
         if (!$key instanceof OpenSSLAsymmetricKey) {
-            throw new RuntimeException('Could not create a test key.');
+            throw new RuntimeException('Could not create a key.');
         }
 
         $this->key          = $key;
-        $this->credentialId = random_bytes(32);
+        $this->credentialId = $credentialId ?? random_bytes(32);
+        $this->signCount    = $signCount;
+    }
+
+    /** An authenticator enrolled earlier, from its saved private key. */
+    public static function restore(string $relyingPartyId, string $origin, string $privateKeyPem, string $credentialId, int $signCount): self
+    {
+        $key = openssl_pkey_get_private($privateKeyPem);
+
+        if (!$key instanceof OpenSSLAsymmetricKey) {
+            throw new RuntimeException('The saved passkey private key could not be read.');
+        }
+
+        return new self($relyingPartyId, $origin, $key, $credentialId, $signCount);
+    }
+
+    public function exportPrivateKey(): string
+    {
+        openssl_pkey_export($this->key, $pem);
+
+        return (string) $pem;
     }
 
     public function credentialId(): string

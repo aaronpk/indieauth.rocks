@@ -56,8 +56,13 @@ final class IpGuard
     /** @var list<string> Permitted when the deployment opts into loopback. */
     private const LOOPBACK = ['127.0.0.0/8', '::1/128'];
 
-    public function __construct(private readonly bool $allowLoopback = false)
-    {
+    /** @var list<string> Permitted when the deployment opts into private networks. */
+    private const PRIVATE = ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '100.64.0.0/10', 'fc00::/7'];
+
+    public function __construct(
+        private readonly bool $allowLoopback = false,
+        private readonly bool $allowPrivate = false,
+    ) {
     }
 
     public function isAllowed(string $ip): bool
@@ -79,6 +84,14 @@ final class IpGuard
 
         if ($this->allowLoopback) {
             foreach (self::LOOPBACK as $range) {
+                if (self::inRange($packed, $range)) {
+                    return true;
+                }
+            }
+        }
+
+        if ($this->allowPrivate) {
+            foreach (self::PRIVATE as $range) {
                 if (self::inRange($packed, $range)) {
                     return true;
                 }

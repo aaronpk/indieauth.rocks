@@ -7,8 +7,9 @@ namespace IndieAuthRocks\Fetch;
 final class FetchResult
 {
     /**
-     * @param array<string, list<string>> $headers Lowercased names; repeated headers kept.
-     * @param list<string>                $redirects URLs visited before this one.
+     * @param array<string, list<string>> $headers        Lowercased names; repeated headers kept.
+     * @param list<string>                $redirects      URLs visited before this one.
+     * @param array<string, string>       $requestHeaders
      */
     public function __construct(
         public readonly string $url,
@@ -16,6 +17,10 @@ final class FetchResult
         public readonly string $body,
         public readonly array $headers = [],
         public readonly array $redirects = [],
+        public readonly string $method = 'GET',
+        public readonly array $requestHeaders = [],
+        public readonly ?string $requestBody = null,
+        public readonly int $durationMs = 0,
     ) {
     }
 
@@ -48,28 +53,17 @@ final class FetchResult
         return in_array($this->status, [301, 302, 303, 307, 308], true) && $this->header('location') !== null;
     }
 
-    /**
-     * Seconds the response may be cached per Cache-Control, clamped to
-     * [$min, $max]. Zero for no-store/no-cache, null when unstated.
-     */
-    public function cacheTtl(int $min, int $max): ?int
+    /** @return array<string, mixed>|null The body as a JSON object, or null. */
+    public function json(): ?array
     {
-        $control = (string) $this->header('cache-control');
+        $decoded = json_decode($this->body, true, 32);
 
-        if (preg_match('/no-store|no-cache/i', $control) === 1) {
-            return 0;
-        }
-
-        if (preg_match('/max-age\s*=\s*(\d+)/i', $control, $m) === 1) {
-            return max($min, min((int) $m[1], $max));
-        }
-
-        return null;
+        return is_array($decoded) && ($decoded === [] || !array_is_list($decoded)) ? $decoded : null;
     }
 
     /** @param list<string> $redirects */
     public function withRedirects(array $redirects): self
     {
-        return new self($this->url, $this->status, $this->body, $this->headers, $redirects);
+        return new self($this->url, $this->status, $this->body, $this->headers, $redirects, $this->method, $this->requestHeaders, $this->requestBody, $this->durationMs);
     }
 }

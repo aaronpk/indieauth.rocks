@@ -15,12 +15,12 @@ final class PageFetcher
     }
 
     /** @throws FetchException */
-    public function fetch(string $url, string $accept, int $maxBytes, int $maxRedirects = 5): FetchResult
+    public function fetch(string $url, string $accept, int $maxBytes = 1_000_000, int $maxRedirects = 5): FetchResult
     {
         $visited = [];
 
         for ($hop = 0; ; $hop++) {
-            $result = $this->client->get($url, $accept, $maxBytes);
+            $result = $this->client->send(new HttpRequest('GET', $url, ['Accept' => $accept], null, $maxBytes));
 
             if (!$result->isRedirect()) {
                 return $result->withRedirects($visited);

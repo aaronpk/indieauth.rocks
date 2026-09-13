@@ -7,33 +7,34 @@ namespace IndieAuthRocks\Fetch;
 use CurlHandle;
 
 /**
- * An HTTP GET hardened for fetching user- and client-supplied URLs.
+ * HTTP requests hardened for URLs supplied by the people running tests.
  *
  *  1. Resolve DNS first, refuse special-use addresses, then pin the connection
  *     to the vetted address with CURLOPT_RESOLVE, closing the DNS-rebinding
  *     window between checking a name and connecting to it.
- *  2. Never follow redirects here. PageFetcher follows them one hop at a time,
- *     so every hop goes through defence 1 again.
+ *  2. Never follow redirects. Callers follow them one hop at a time, so every
+ *     hop is vetted again, and a redirect is itself something tests look at.
  *  3. Cap the response during transfer, not after.
- *  4. Short timeouts, so a slow endpoint cannot tie up a worker.
+ *  4. Short timeouts.
  */
 final class SafeFetcher implements HttpClient
 {
-    private const CONNECT_TIMEOUT = 4;
-    private const TOTAL_TIMEOUT   = 8;
+    private const CONNECT_TIMEOUT = 5;
 
     private readonly IpGuard $guard;
 
     public function __construct(
         bool $allowLoopback = false,
-        private readonly string $userAgent = 'IndieAuth',
+        bool $allowPrivate = false,
+        private readonly ?string $caFile = null,
+        private readonly string $userAgent = 'IndieAuth Rocks',
     ) {
-        $this->guard = new IpGuard($allowLoopback);
+        $this->guard = new IpGuard($allowLoopback, $allowPrivate);
     }
 
-    public function get(string $url, string $accept, int $maxBytes): FetchResult
+    public function send(HttpRequest $request): FetchResult
     {
-        $parts = parse_url($url);
+        $parts = parse_url($request->url);
 
         if ($parts === false || !isset($parts['host'], $parts['scheme'])
             || !in_array(strtolower($parts['scheme']), ['http', 'https'], true)) {
@@ -49,24 +50,29 @@ final class SafeFetcher implements HttpClient
         $body     = '';
         $exceeded = false;
         $headers  = [];
+        $maxBytes = $request->maxBytes;
+
+        $headerLines = ['Expect:'];
+        foreach ($request->headers as $name => $value) {
+            $headerLines[] = $name . ': ' . $value;
+        }
 
         $handle = curl_init();
 
-        curl_setopt_array($handle, [
-            CURLOPT_URL             => $url,
-            CURLOPT_HTTPGET         => true,
+        $options = [
+            CURLOPT_URL             => $request->url,
+            CURLOPT_CUSTOMREQUEST   => $request->method,
             CURLOPT_FOLLOWLOCATION  => false,
             CURLOPT_PROTOCOLS       => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_CONNECTTIMEOUT  => self::CONNECT_TIMEOUT,
-            CURLOPT_TIMEOUT         => self::TOTAL_TIMEOUT,
+            CURLOPT_TIMEOUT         => $request->timeout,
             CURLOPT_SSL_VERIFYPEER  => true,
             CURLOPT_SSL_VERIFYHOST  => 2,
             CURLOPT_ACCEPT_ENCODING => '',
-            CURLOPT_HTTPHEADER      => ['Accept: ' . $accept, 'Expect:'],
+            CURLOPT_HTTPHEADER      => $headerLines,
             CURLOPT_USERAGENT       => $this->userAgent,
             CURLOPT_RESOLVE         => [sprintf('%s:%d:%s', trim($host, '[]'), $port, $address)],
             CURLOPT_HEADERFUNCTION  => static function (CurlHandle $h, string $line) use (&$headers): int {
-                // A new status line starts a new header block (e.g. after 100 Continue).
                 if (str_starts_with($line, 'HTTP/')) {
                     $headers = [];
                 } elseif (str_contains($line, ':')) {
@@ -87,11 +93,27 @@ final class SafeFetcher implements HttpClient
 
                 return strlen($chunk);
             },
-        ]);
+        ];
 
-        $ok     = curl_exec($handle);
-        $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        $error  = curl_error($handle);
+        if ($request->method === 'HEAD') {
+            $options[CURLOPT_NOBODY] = true;
+        }
+
+        if ($request->body !== null) {
+            $options[CURLOPT_POSTFIELDS] = $request->body;
+        }
+
+        if ($this->caFile !== null && is_file($this->caFile)) {
+            $options[CURLOPT_CAINFO] = $this->caFile;
+        }
+
+        curl_setopt_array($handle, $options);
+
+        $started = hrtime(true);
+        $ok      = curl_exec($handle);
+        $status  = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+        $error   = curl_error($handle);
+        $elapsed = (int) ((hrtime(true) - $started) / 1_000_000);
 
         curl_close($handle);
 
@@ -103,16 +125,19 @@ final class SafeFetcher implements HttpClient
             throw FetchException::transient('The request failed: ' . ($error !== '' ? $error : 'unknown error'));
         }
 
-        return new FetchResult($url, $status, $body, $headers);
+        return new FetchResult(
+            url:            $request->url,
+            status:         $status,
+            body:           $body,
+            headers:        $headers,
+            method:         $request->method,
+            requestHeaders: $request->headers,
+            requestBody:    $request->body,
+            durationMs:     $elapsed,
+        );
     }
 
-    /**
-     * Resolve a hostname and refuse it unless every answer is acceptable. A host
-     * that resolves to both a public and a private address is being used to
-     * smuggle access to the private one.
-     *
-     * @throws FetchException
-     */
+    /** @throws FetchException */
     private function resolveAndVet(string $host): string
     {
         $host = trim($host, '[]');
@@ -134,12 +159,7 @@ final class SafeFetcher implements HttpClient
 
         foreach ($addresses as $address) {
             if (!$this->guard->isAllowed($address)) {
-                throw FetchException::refused(sprintf(
-                    '"%s" resolves to %s, and %s',
-                    $host,
-                    $address,
-                    $this->guard->reason($address),
-                ));
+                throw FetchException::refused(sprintf('"%s" resolves to %s, and %s', $host, $address, $this->guard->reason($address)));
             }
         }
 

@@ -1,0 +1,27 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+if (PHP_SAPI !== 'cli') {
+    exit(1);
+}
+
+$autoload = __DIR__ . '/../vendor/autoload.php';
+
+if (!is_file($autoload)) {
+    fwrite(STDERR, "Dependencies are not installed. Run:\n\n    composer install\n");
+    exit(1);
+}
+
+require $autoload;
+
+IndieAuthRocks\Bootstrap::loadEnvironment();
+
+IndieAuthRocks\Logging\ErrorHandler::install(
+    IndieAuthRocks\Logging\ErrorLog::fromEnvironment(),
+    IndieAuthRocks\Bootstrap::debug(),
+    web: false,
+);
+
+exit((new IndieAuthRocks\Console\Application())->run(array_slice($argv, 1)));

@@ -1,0 +1,35 @@
+<?php
+
+declare(strict_types=1);
+
+use IndieAuthRocks\Bootstrap;
+use IndieAuthRocks\Http\Request;
+use IndieAuthRocks\Logging\ErrorHandler;
+use IndieAuthRocks\Logging\ErrorLog;
+
+// When running under `php -S` with this file as the router script, let the
+// built-in server handle real files (CSS, JS) itself.
+if (PHP_SAPI === 'cli-server') {
+    $file = __DIR__ . '/' . ltrim((string) parse_url((string) ($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH), '/');
+    if ($file !== __DIR__ . '/' && is_file($file)) {
+        return false;
+    }
+}
+
+$autoload = dirname(__DIR__) . '/vendor/autoload.php';
+if (!is_file($autoload)) {
+    http_response_code(500);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Dependencies are not installed. Run:\n\n    composer install\n";
+    exit(1);
+}
+
+require $autoload;
+
+Bootstrap::loadEnvironment();
+
+// Installed before anything else runs, so a failure during bootstrap is written
+// down rather than surfacing as an empty 500.
+ErrorHandler::install(ErrorLog::fromEnvironment(), Bootstrap::debug());
+
+Bootstrap::kernel()->handle(Request::fromGlobals())->send();

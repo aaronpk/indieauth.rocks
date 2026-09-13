@@ -8,8 +8,12 @@ use IndieAuthRocks\Config\Env;
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Controllers\AccountController;
 use IndieAuthRocks\Controllers\AltController;
+use IndieAuthRocks\ClientTests\Markers;
+use IndieAuthRocks\ClientTests\TestServer;
 use IndieAuthRocks\Controllers\CatalogController;
+use IndieAuthRocks\Controllers\ClientRunController;
 use IndieAuthRocks\Controllers\FixtureController;
+use IndieAuthRocks\Controllers\TestServerController;
 use IndieAuthRocks\Controllers\ServerRunController;
 use IndieAuthRocks\Controllers\ClientDocsController;
 use IndieAuthRocks\Controllers\HomeController;
@@ -143,6 +147,36 @@ final class Bootstrap
 
         $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
 
+        $container->set(Markers::class, static fn (Container $c): Markers => new Markers($c->get(RedisStore::class)));
+
+        $container->set(TestServer::class, static fn (Container $c): TestServer => new TestServer(
+            $c->get(SiteConfig::class),
+            $c->get(RedisStore::class),
+            $c->get(Markers::class),
+            $c->get(ResultRepository::class),
+            $c->get(RecordingHttpClient::class),
+        ));
+
+        $container->set(TestServerController::class, static fn (Container $c): TestServerController => new TestServerController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(TestServer::class),
+            $c->get(RunRepository::class),
+            $c->get(ExchangeRepository::class),
+        ));
+
+        $container->set(ClientRunController::class, static fn (Container $c): ClientRunController => new ClientRunController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(TestServer::class),
+            $c->get(Markers::class),
+            $c->get(RunRepository::class),
+            $c->get(ResultRepository::class),
+            $c->get(ExchangeRepository::class),
+        ));
+
         $container->set(ClientDocsController::class, static fn (Container $c): ClientDocsController => new ClientDocsController(
             $c->get(SiteConfig::class),
             $c->get(RunRepository::class),
@@ -177,7 +211,39 @@ final class Bootstrap
         $router->get('/callback/{key}', [ServerRunController::class, 'callback']);
         $router->get('/clients/{key}/{variant}', [ClientDocsController::class, 'document']);
 
+        // Client test runs
+        $router->get('/client-runs', [ClientRunController::class, 'index']);
+        $router->post('/client-runs', [ClientRunController::class, 'start']);
+        $router->get('/client-runs/{run}', [ClientRunController::class, 'show']);
+        $router->get('/client-runs/{run}/unsolicited', [ClientRunController::class, 'unsolicited']);
+        $router->get('/client-runs/{run}/replay', [ClientRunController::class, 'replay']);
+        $router->get('/client-runs/{run}/tests/{id}', [ClientRunController::class, 'test']);
+        $router->post('/client-runs/{run}/tests/{id}/answer', [ClientRunController::class, 'answer']);
+
+        // Test profiles and the test IndieAuth server
+        self::testServerRoutes($router);
+        $router->get('/u/{key}/m/{n}', [TestServerController::class, 'relativeMetadata']);
+        $router->get('/u/{key}/{n}/m/{x}', [TestServerController::class, 'naiveMetadata']);
+        $router->get('/s/{key}/{n}/metadata', [TestServerController::class, 'metadata']);
+        $router->add(['OPTIONS'], '/s/{key}/{n}/metadata', [TestServerController::class, 'preflight']);
+        $router->get('/s/{key}/{n}/auth', [TestServerController::class, 'authorize']);
+        $router->post('/s/{key}/{n}/auth', [TestServerController::class, 'redeemAtAuthorizationEndpoint']);
+        $router->add(['OPTIONS'], '/s/{key}/{n}/auth', [TestServerController::class, 'preflight']);
+        $router->post('/s/{key}/{n}/approve', [TestServerController::class, 'approve']);
+        $router->post('/s/{key}/{n}/revoke', [TestServerController::class, 'revoke']);
+        $router->add(['OPTIONS'], '/s/{key}/{n}/revoke', [TestServerController::class, 'preflight']);
+        $router->any('/s/{key}/{n}/userinfo', [TestServerController::class, 'userinfo']);
+        $router->add(['OPTIONS'], '/s/{key}/{n}/userinfo', [TestServerController::class, 'preflight']);
+
         return $router;
+    }
+
+    /** Routes the test server answers on both origins. */
+    private static function testServerRoutes(Router $router): void
+    {
+        $router->get('/u/{key}/{n}', [TestServerController::class, 'profile']);
+        $router->post('/s/{key}/{n}/token', [TestServerController::class, 'token']);
+        $router->add(['OPTIONS'], '/s/{key}/{n}/token', [TestServerController::class, 'preflight']);
     }
 
     /** The alternate origin: only what tests need to land on or fetch. */
@@ -191,6 +257,7 @@ final class Bootstrap
         $router->get('/cb/{key}', [AltController::class, 'landing']);
         $router->get('/cb/{key}/{suffix}', [AltController::class, 'landing']);
         $router->get('/stranger/{key}', [AltController::class, 'stranger']);
+        self::testServerRoutes($router);
 
         return $router;
     }

@@ -23,8 +23,9 @@ use Throwable;
  */
 abstract class AppTestCase extends TestCase
 {
-    protected const BASE = 'http://localhost:7777/';
-    protected const ALT  = 'http://127.0.0.1:7777/';
+    // No ports: client tests hand these out as profile URLs, which cannot have one.
+    protected const BASE = 'http://rocks.example/';
+    protected const ALT  = 'http://alt.rocks.example/';
 
     protected Container $container;
     protected FakeHttpClient $http;

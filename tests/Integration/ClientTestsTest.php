@@ -1,0 +1,208 @@
+<?php
+
+declare(strict_types=1);
+
+namespace IndieAuthRocks\Tests\Integration;
+
+use IndieAuthRocks\Bootstrap;
+use IndieAuthRocks\ClientTests\ClientGrader;
+use IndieAuthRocks\ClientTests\ClientTestUrls;
+use IndieAuthRocks\Engine\Run;
+use IndieAuthRocks\Http\Request;
+use IndieAuthRocks\Http\Response;
+use IndieAuthRocks\Identity\Session;
+use IndieAuthRocks\Identity\Sessions;
+use IndieAuthRocks\Storage\ResultRepository;
+use IndieAuthRocks\Storage\RunRepository;
+use IndieAuthRocks\Storage\TesterRepository;
+use IndieAuthRocks\Tests\Support\AppTestCase;
+use IndieAuthRocks\Tests\Support\FakeIndieAuthClient;
+use IndieAuthRocks\Tests\Support\KernelHttpClient;
+
+final class ClientTestsTest extends AppTestCase
+{
+    private Run $run;
+    private ClientTestUrls $urls;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // A signed-in tester.
+        $tester   = $this->container->get(TesterRepository::class)->signIn('https://tester.example/');
+        $sessions = $this->container->get(Sessions::class);
+        $session  = $sessions->promote(Session::createAnonymous(), (string) $tester->id, ['indieauth']);
+        $this->cookies[Sessions::COOKIE] = $session->id;
+
+        // The client publishes metadata at its client_id.
+        $this->http->json(FakeIndieAuthClient::CLIENT_ID, [
+            'client_id'     => FakeIndieAuthClient::CLIENT_ID,
+            'client_name'   => 'Fake Client',
+            'client_uri'    => FakeIndieAuthClient::CLIENT_ID,
+            'redirect_uris' => [FakeIndieAuthClient::REDIRECT_URI],
+        ]);
+
+        $page  = $this->request('GET', self::BASE . 'client-runs');
+        preg_match('/name="_csrf" value="([^"]+)"/', $page->body, $csrf);
+        $start = $this->request('POST', self::BASE . 'client-runs', ['_csrf' => $csrf[1] ?? '']);
+
+        $this->assertSame(303, $start->status);
+        $this->run  = $this->container->get(RunRepository::class)->findByPublicId(basename((string) $start->header('location')));
+        $this->urls = new ClientTestUrls($this->config(), $this->run->runKey);
+    }
+
+    private function client(string ...$defects): FakeIndieAuthClient
+    {
+        $dispatch = function (string $method, string $url, array $post, array $headers, string $body): Response {
+            $parts = parse_url($url);
+            parse_str((string) ($parts['query'] ?? ''), $query);
+
+            return Bootstrap::kernel($this->container)->handle(new Request(
+                method: $method,
+                path: (string) $parts['path'],
+                query: array_map('strval', array_filter($query, 'is_string')),
+                post: $post,
+                headers: $headers,
+                body: $body,
+                host: $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : ''),
+                queryString: (string) ($parts['query'] ?? ''),
+            ));
+        };
+
+        $http = new KernelHttpClient($dispatch, ['rocks.example', 'alt.rocks.example']);
+
+        return new FakeIndieAuthClient(
+            $http,
+            fn (string $method, string $url, array $post): Response => $this->request($method, $url, $post),
+            ...$defects,
+        );
+    }
+
+    private function answer(int $n, string $value): void
+    {
+        $page = $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId . '/tests/C' . $n);
+        preg_match('/name="_csrf" value="([^"]+)"/', $page->body, $csrf);
+
+        $this->request('POST', self::BASE . 'client-runs/' . $this->run->publicId . '/tests/C' . $n . '/answer', ['_csrf' => $csrf[1] ?? '', 'value' => $value]);
+    }
+
+    /** Sign in with test n and answer honestly with what the client reported. */
+    private function play(FakeIndieAuthClient $client, int $n): array
+    {
+        $result = $client->signIn($this->urls->profile($n));
+
+        $this->answer($n, match (true) {
+            $result['outcome'] !== 'signed_in'                             => ClientGrader::ANSWER_ERROR,
+            $result['me'] === ClientGrader::expectedMe($this->urls, $n)    => ClientGrader::ANSWER_EXPECTED,
+            default                                                        => ClientGrader::ANSWER_OTHER,
+        });
+
+        return $result;
+    }
+
+    /** @return array<string, string> */
+    private function outcomes(): array
+    {
+        $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId);
+
+        return array_map(static fn (array $r): string => (string) $r['outcome'], $this->container->get(ResultRepository::class)->forRun($this->run->id));
+    }
+
+    public function test_a_careful_client_passes(): void
+    {
+        $client = $this->client();
+
+        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
+            $this->play($client, $n);
+        }
+
+        $outcomes = $this->outcomes();
+
+        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
+            $this->assertSame('pass', $outcomes['C' . $n] ?? 'missing', 'C' . $n);
+        }
+
+        foreach (['C201', 'C202', 'C203', 'C204', 'C205', 'C206', 'C207', 'C208', 'C209', 'C210', 'C401'] as $id) {
+            $this->assertSame('pass', $outcomes[$id] ?? 'missing', $id);
+        }
+    }
+
+    /** @return iterable<string, array{0: string, 1: list<int>, 2: list<string>}> */
+    public static function defects(): iterable
+    {
+        yield 'ignores state'          => ['skipStateCheck', [301], ['C301']];
+        yield 'ignores iss'            => ['skipIssCheck', [302, 303, 304], ['C302', 'C303', 'C304']];
+        yield 'trusts me'              => ['noMeVerification', [402, 403, 404], ['C402', 'C403', 'C404']];
+        yield 'ignores Link headers'   => ['headerIgnored', [102, 103], ['C102', 'C103']];
+        yield 'joins relative URLs'    => ['naiveRelative', [105], ['C105']];
+        yield 'no PKCE'                => ['noPkce', [101], ['C101', 'C205']];
+    }
+
+    /**
+     * @param list<int>    $tests
+     * @param list<string> $failing
+     */
+    #[\PHPUnit\Framework\Attributes\DataProvider('defects')]
+    public function test_each_client_defect_is_caught(string $defect, array $tests, array $failing): void
+    {
+        $client = $this->client($defect);
+
+        foreach ($tests as $n) {
+            $this->play($client, $n);
+        }
+
+        $outcomes = $this->outcomes();
+
+        foreach ($failing as $id) {
+            $this->assertContains($outcomes[$id] ?? 'missing', ['fail', 'warning'], sprintf('%s should flag %s, got %s', $defect, $id, $outcomes[$id] ?? 'missing'));
+        }
+    }
+
+    public function test_unsolicited_and_replayed_responses(): void
+    {
+        $careful = $this->client();
+        $this->play($careful, 101);
+
+        $unsolicited = $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId . '/unsolicited');
+        $this->assertSame(302, $unsolicited->status);
+        $this->assertSame('error', $careful->callback((string) $unsolicited->header('location'))['outcome']);
+        $this->answer(306, ClientGrader::ANSWER_ERROR);
+
+        $replay = $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId . '/replay');
+        $this->assertSame('error', $careful->callback((string) $replay->header('location'))['outcome']);
+        $this->answer(307, ClientGrader::ANSWER_ERROR);
+
+        $outcomes = $this->outcomes();
+        $this->assertSame('pass', $outcomes['C306'] ?? 'missing');
+        $this->assertSame('pass', $outcomes['C307'] ?? 'missing');
+
+        // A careless client redeems the unsolicited code.
+        $careless = $this->client('skipStateCheck');
+        $careless->signIn($this->urls->profile(101));
+        $unsolicited = $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId . '/unsolicited');
+        $careless->callback((string) $unsolicited->header('location'));
+
+        $this->assertSame('fail', $this->outcomes()['C306'] ?? 'missing');
+    }
+
+    public function test_consent_requires_the_owner_or_the_pin(): void
+    {
+        $client = $this->client();
+        $owner  = $this->cookies;
+
+        $this->cookies = [];
+        $result = $client->signIn($this->urls->profile(101));
+
+        $this->assertSame('error', $result['outcome']);
+
+        $this->cookies = $owner;
+        $this->assertSame('signed_in', $client->signIn($this->urls->profile(101))['outcome']);
+    }
+
+    public function test_client_runs_are_private(): void
+    {
+        $this->cookies = [];
+
+        $this->assertSame(403, $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId)->status);
+    }
+}

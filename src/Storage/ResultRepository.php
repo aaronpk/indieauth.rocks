@@ -33,6 +33,37 @@ final class ResultRepository
         );
     }
 
+    /**
+     * Record a verdict only if it is worse than what is already recorded, in
+     * one statement, so concurrent observations cannot overwrite a failure.
+     */
+    public function recordWorst(int $runId, Verdict $verdict, ?string $step = null): void
+    {
+        $rank = "FIELD(%s, 'not_run', 'needs_input', 'skipped', 'pass', 'warning', 'error', 'fail')";
+        $worse = sprintf($rank, 'VALUES(outcome)') . ' > ' . sprintf($rank, 'outcome');
+
+        // outcome is assigned last: the conditions compare against the old value.
+        $this->db->execute(
+            "INSERT INTO results (run_id, test_id, outcome, summary, details_json, step, answered_by, recorded_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'auto', ?)
+             ON DUPLICATE KEY UPDATE
+                 summary      = IF($worse, VALUES(summary), summary),
+                 details_json = IF($worse, VALUES(details_json), details_json),
+                 step         = IF($worse, VALUES(step), step),
+                 recorded_at  = IF($worse, VALUES(recorded_at), recorded_at),
+                 outcome      = IF($worse, VALUES(outcome), outcome)",
+            [
+                $runId,
+                $verdict->testId,
+                $verdict->outcome->value,
+                mb_substr($verdict->summary, 0, 1000),
+                $verdict->details === [] ? null : json_encode($verdict->details, JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),
+                $step,
+                Database::now(),
+            ],
+        );
+    }
+
     /** @return array<string, array<string, mixed>> Keyed by test id. */
     public function forRun(int $runId): array
     {

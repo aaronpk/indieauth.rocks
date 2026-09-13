@@ -6,6 +6,7 @@ namespace IndieAuthRocks;
 
 use IndieAuthRocks\Config\Env;
 use IndieAuthRocks\Config\SiteConfig;
+use IndieAuthRocks\Controllers\CatalogController;
 use IndieAuthRocks\Controllers\HomeController;
 use IndieAuthRocks\Identity\Guard;
 use IndieAuthRocks\Identity\Sessions;
@@ -59,11 +60,13 @@ final class Bootstrap
 
         // ------------------------------------------------------------ controllers
 
-        $container->set(HomeController::class, static fn (Container $c): HomeController => new HomeController(
-            $c->get(Template::class),
-            $c->get(SiteConfig::class),
-            $c->get(Guard::class),
-        ));
+        foreach ([HomeController::class, CatalogController::class] as $class) {
+            $container->set($class, static fn (Container $c): object => new $class(
+                $c->get(Template::class),
+                $c->get(SiteConfig::class),
+                $c->get(Guard::class),
+            ));
+        }
 
         return $container;
     }
@@ -73,6 +76,9 @@ final class Bootstrap
         $router = new Router();
 
         $router->get('/', [HomeController::class, 'index']);
+        $router->get('/server-tests', [CatalogController::class, 'serverTests']);
+        $router->get('/client-tests', [CatalogController::class, 'clientTests']);
+        $router->get('/tests/{id}', [CatalogController::class, 'test']);
 
         return $router;
     }

@@ -7,6 +7,7 @@ namespace IndieAuthRocks\Console;
 use IndieAuthRocks\Bootstrap;
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Container;
+use IndieAuthRocks\Engine\Catalog;
 use IndieAuthRocks\Storage\Database;
 use IndieAuthRocks\Storage\Migrator;
 use IndieAuthRocks\Storage\RedisStore;
@@ -20,6 +21,7 @@ final class Application
     private const COMMANDS = [
         'migrate' => 'Apply pending database migrations',
         'doctor'  => 'Check configuration, database, Redis and hostnames',
+        'catalog' => 'List tests: catalog [--suite=server|client] [--format=text|md]',
         'help'    => 'Show this list',
     ];
 
@@ -40,6 +42,7 @@ final class Application
             return match ($command) {
                 'migrate'              => $this->migrate(),
                 'doctor'               => $this->doctor(),
+                'catalog'              => $this->catalog($args),
                 'help', '--help', '-h' => $this->help(),
                 default                => $this->unknown($command),
             };
@@ -134,6 +137,37 @@ final class Application
         $this->out->line();
 
         return $failures === 0 ? 0 : 1;
+    }
+
+    private function catalog(Args $args): int
+    {
+        $markdown = $args->option('format', 'text') === 'md';
+        $suites   = $args->option('suite') !== null ? [(string) $args->option('suite')] : [Catalog::SERVER, Catalog::CLIENT];
+
+        foreach ($suites as $suite) {
+            $this->out->line($markdown ? '# ' . ucfirst($suite) . ' tests' : strtoupper($suite) . ' TESTS');
+
+            foreach (Catalog::sections($suite) as $section => $tests) {
+                $this->out->line();
+                $this->out->line($markdown ? '## ' . $section : $section);
+
+                if ($markdown) {
+                    $this->out->line();
+                    $this->out->line('| ID | Test | Level | Mode | Spec |');
+                    $this->out->line('|---|---|---|---|---|');
+                }
+
+                foreach ($tests as $test) {
+                    $this->out->line($markdown
+                        ? sprintf('| %s | %s%s | %s | %s | %s |', $test->id, $test->title, $test->extended ? ' (extended)' : '', $test->level->label(), $test->mode->label(), $test->spec)
+                        : sprintf('  %s  %-58s %-13s %s', $test->id, $test->title, $test->level->label(), $test->mode->label()));
+                }
+            }
+
+            $this->out->line();
+        }
+
+        return 0;
     }
 
     private function help(): int

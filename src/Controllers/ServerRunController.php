@@ -271,10 +271,10 @@ final class ServerRunController extends Controller
      */
     private function ownerAction(Request $request, array $params, callable $work): Response
     {
-        $run     = $this->run($params);
         $visitor = $this->guard->visitor($request);
-
         $this->guard->requireCsrf($visitor, $request);
+
+        $run = $this->run($params);
 
         if (!$this->isOwner($request, $visitor, $run)) {
             throw HttpException::forbidden('Only the person who started this run can continue it.');

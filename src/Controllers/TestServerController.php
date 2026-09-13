@@ -102,10 +102,10 @@ final class TestServerController extends Controller
     /** @param array<string, string> $params */
     public function approve(Request $request, array $params = []): Response
     {
-        [$run, $n, $decoy] = $this->resolve($request, $params);
-
         $visitor = $this->guard->begin($request);
         $this->guard->requireCsrf($visitor, $request);
+
+        [$run, $n, $decoy] = $this->resolve($request, $params);
 
         $attempt = $this->server->attempt($run, $n, (string) $request->post('attempt', ''));
 

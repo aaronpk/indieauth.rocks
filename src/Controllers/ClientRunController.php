@@ -188,8 +188,8 @@ final class ClientRunController extends Controller
     /** @param array<string, string> $params */
     public function answer(Request $request, array $params = []): Response
     {
-        [$run, $visitor] = $this->owned($request, $params);
-        $this->guard->requireCsrf($visitor, $request);
+        $this->guard->requireCsrf($this->guard->visitor($request), $request);
+        [$run] = $this->owned($request, $params);
 
         $id    = strtoupper($params['id'] ?? '');
         $n     = (int) substr($id, 1);

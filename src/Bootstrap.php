@@ -6,7 +6,10 @@ namespace IndieAuthRocks;
 
 use IndieAuthRocks\Config\Env;
 use IndieAuthRocks\Config\SiteConfig;
+use IndieAuthRocks\Controllers\AccountController;
+use IndieAuthRocks\Controllers\AltController;
 use IndieAuthRocks\Controllers\CatalogController;
+use IndieAuthRocks\Controllers\ServerRunController;
 use IndieAuthRocks\Controllers\ClientDocsController;
 use IndieAuthRocks\Controllers\HomeController;
 use IndieAuthRocks\Engine\TokenVault;
@@ -110,6 +113,33 @@ final class Bootstrap
             ));
         }
 
+        $container->set(ServerRunController::class, static fn (Container $c): ServerRunController => new ServerRunController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(ServerRunner::class),
+            $c->get(RunRepository::class),
+            $c->get(ResultRepository::class),
+            $c->get(ExchangeRepository::class),
+            $c->get(RateLimiter::class),
+        ));
+
+        $container->set(AltController::class, static fn (Container $c): AltController => new AltController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(ServerRunner::class),
+            $c->get(RunRepository::class),
+            $c->get(ExchangeRepository::class),
+        ));
+
+        $container->set(AccountController::class, static fn (Container $c): AccountController => new AccountController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(RunRepository::class),
+        ));
+
         $container->set(ClientDocsController::class, static fn (Container $c): ClientDocsController => new ClientDocsController(
             $c->get(SiteConfig::class),
             $c->get(RunRepository::class),
@@ -128,7 +158,20 @@ final class Bootstrap
         $router->get('/client-tests', [CatalogController::class, 'clientTests']);
         $router->get('/tests/{id}', [CatalogController::class, 'test']);
 
-        // The client_id documents this site publishes while testing a server.
+        $router->get('/account', [AccountController::class, 'show']);
+        $router->post('/logout', [AccountController::class, 'logout']);
+
+        // Server test runs
+        $router->post('/server-runs', [ServerRunController::class, 'start']);
+        $router->get('/runs/{run}', [ServerRunController::class, 'show']);
+        $router->get('/runs/{run}/go/{attempt}', [ServerRunController::class, 'go']);
+        $router->post('/runs/{run}/answer', [ServerRunController::class, 'answer']);
+        $router->post('/runs/{run}/skip', [ServerRunController::class, 'skip']);
+        $router->post('/runs/{run}/resume', [ServerRunController::class, 'resume']);
+        $router->get('/runs/{run}/tests/{test}', [ServerRunController::class, 'transcript']);
+
+        // The client this site plays: its redirect URI and client_id documents.
+        $router->get('/callback/{key}', [ServerRunController::class, 'callback']);
         $router->get('/clients/{key}/{variant}', [ClientDocsController::class, 'document']);
 
         return $router;
@@ -140,6 +183,11 @@ final class Bootstrap
         $router = new Router();
 
         $router->get('/', [HomeController::class, 'alt']);
+        $router->get('/catch/{key}/{test}', [AltController::class, 'landing']);
+        $router->get('/catch/{key}/{test}/{suffix}', [AltController::class, 'landing']);
+        $router->get('/cb/{key}', [AltController::class, 'landing']);
+        $router->get('/cb/{key}/{suffix}', [AltController::class, 'landing']);
+        $router->get('/stranger/{key}', [AltController::class, 'stranger']);
 
         return $router;
     }

@@ -108,6 +108,7 @@ final class ClientRunController extends Controller
         return $this->page('client-run/show', 'Client test run', [
             'run_id'   => $run->publicId,
             'pin'      => (string) ($run->state['pin'] ?? ''),
+            'csrf'     => $visitor->session()->csrf,
             'counts'   => $this->results->counts($run->id),
             'sections' => $sections,
             'script'   => 'copy.js',

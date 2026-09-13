@@ -22,6 +22,7 @@ final class Application
         'migrate' => 'Apply pending database migrations',
         'doctor'  => 'Check configuration, database, Redis and hostnames',
         'catalog' => 'List tests: catalog [--suite=server|client] [--format=text|md]',
+        'prune'   => 'Delete unpublished runs older than RUN_RETENTION_DAYS',
         'run-server' => 'Run the server suite: run-server <profile-url> [--driver=myindieauth] [--extended] [--json]',
         'driver:myindieauth:enroll' => 'Create a driver account on a myindieauth server: --base=URL [--profile=URL]',
         'help'    => 'Show this list',
@@ -45,6 +46,7 @@ final class Application
                 'migrate'              => $this->migrate(),
                 'doctor'               => $this->doctor(),
                 'catalog'              => $this->catalog($args),
+                'prune'                => $this->prune(),
                 'run-server'           => (new RunServerCommand($this->out, $this->container))->run($args),
                 'driver:myindieauth:enroll' => (new EnrollCommand($this->out, $this->container->get(SiteConfig::class)))->run($args),
                 'help', '--help', '-h' => $this->help(),
@@ -141,6 +143,19 @@ final class Application
         $this->out->line();
 
         return $failures === 0 ? 0 : 1;
+    }
+
+    private function prune(): int
+    {
+        $days    = $this->container->get(SiteConfig::class)->runRetentionDays;
+        $removed = $this->container->get(Database::class)->execute(
+            'DELETE FROM runs WHERE created_at < ? AND id NOT IN (SELECT run_id FROM reports)',
+            [Database::now(-$days * 86_400)],
+        );
+
+        $this->out->line(sprintf('Removed %d unpublished run(s) older than %d days.', $removed, $days));
+
+        return 0;
     }
 
     private function catalog(Args $args): int

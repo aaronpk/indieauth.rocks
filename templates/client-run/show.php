@@ -28,6 +28,8 @@ $symbols = ['pass' => '✓', 'fail' => '✗', 'warning' => '!', 'skipped' => '�
     <p class="muted small">After signing in (or failing to), open the test to tell us what your client showed.</p>
 </section>
 
+<?= $view->partial('partials/publish', ['action' => '/client-runs/' . html_entity_decode($run_id) . '/publish', 'csrf' => html_entity_decode($csrf)]) ?>
+
 <?php foreach ($sections as $section) { ?>
     <section class="card catalog-section">
         <h2><?= $section['name'] ?></h2>

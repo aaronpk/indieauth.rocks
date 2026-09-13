@@ -87,6 +87,10 @@ $symbols = ['pass' => '✓', 'fail' => '✗', 'warning' => '!', 'skipped' => '�
     <div class="notice">You are viewing someone else's test run.</div>
 <?php } ?>
 
+<?php if ($can_publish) { ?>
+    <?= $view->partial('partials/publish', ['action' => '/runs/' . html_entity_decode($run['public_id']) . '/publish', 'csrf' => html_entity_decode($csrf)]) ?>
+<?php } ?>
+
 <?php foreach ($sections as $section) { ?>
     <section class="card catalog-section">
         <h2><?= $section['name'] ?></h2>

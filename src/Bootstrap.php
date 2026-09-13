@@ -13,6 +13,8 @@ use IndieAuthRocks\ClientTests\TestServer;
 use IndieAuthRocks\Controllers\CatalogController;
 use IndieAuthRocks\Controllers\ClientRunController;
 use IndieAuthRocks\Controllers\FixtureController;
+use IndieAuthRocks\Controllers\ReportController;
+use IndieAuthRocks\Storage\ReportRepository;
 use IndieAuthRocks\Controllers\TestServerController;
 use IndieAuthRocks\Controllers\ServerRunController;
 use IndieAuthRocks\Controllers\ClientDocsController;
@@ -147,6 +149,17 @@ final class Bootstrap
 
         $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
 
+        $container->set(ReportRepository::class, static fn (Container $c): ReportRepository => new ReportRepository($c->get(Database::class)));
+
+        $container->set(ReportController::class, static fn (Container $c): ReportController => new ReportController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(ReportRepository::class),
+            $c->get(RunRepository::class),
+            $c->get(ResultRepository::class),
+        ));
+
         $container->set(Markers::class, static fn (Container $c): Markers => new Markers($c->get(RedisStore::class)));
 
         $container->set(TestServer::class, static fn (Container $c): TestServer => new TestServer(
@@ -164,6 +177,7 @@ final class Bootstrap
             $c->get(TestServer::class),
             $c->get(RunRepository::class),
             $c->get(ExchangeRepository::class),
+            $c->get(RateLimiter::class),
         ));
 
         $container->set(ClientRunController::class, static fn (Container $c): ClientRunController => new ClientRunController(
@@ -210,6 +224,13 @@ final class Bootstrap
         // The client this site plays: its redirect URI and client_id documents.
         $router->get('/callback/{key}', [ServerRunController::class, 'callback']);
         $router->get('/clients/{key}/{variant}', [ClientDocsController::class, 'document']);
+
+        // Implementation reports
+        $router->get('/implementations', [ReportController::class, 'index']);
+        $router->get('/implementations/{id}', [ReportController::class, 'show']);
+        $router->post('/implementations/{id}/delete', [ReportController::class, 'delete']);
+        $router->post('/runs/{run}/publish', [ReportController::class, 'publish']);
+        $router->post('/client-runs/{run}/publish', [ReportController::class, 'publish']);
 
         // Client test runs
         $router->get('/client-runs', [ClientRunController::class, 'index']);

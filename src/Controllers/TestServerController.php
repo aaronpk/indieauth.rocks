@@ -15,6 +15,7 @@ use IndieAuthRocks\Http\Response;
 use IndieAuthRocks\Http\Url;
 use IndieAuthRocks\Identity\Guard;
 use IndieAuthRocks\Storage\ExchangeRepository;
+use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\RunRepository;
 use IndieAuthRocks\View\Template;
 
@@ -28,6 +29,7 @@ final class TestServerController extends Controller
         private readonly TestServer $server,
         private readonly RunRepository $runs,
         private readonly ExchangeRepository $exchanges,
+        private readonly RateLimiter $limiter,
     ) {
         parent::__construct($view, $config, $guard);
     }
@@ -179,6 +181,12 @@ final class TestServerController extends Controller
 
         if (!Scenario::exists($n)) {
             throw HttpException::notFound();
+        }
+
+        // A client under test makes a handful of requests per sign-in; this only
+        // stops the test server being used as a free endpoint for anything else.
+        if ($this->limiter->hit('client-run', $run->runKey, 600) > 2000) {
+            throw new HttpException(429, 'Too many requests for this client test run.');
         }
 
         $this->exchanges->recordInbound($run->id, 'C' . $n . ($m[2] === 'd' ? 'd' : ''), $request);

@@ -125,6 +125,7 @@ final class ServerRunController extends Controller
                 'signed_in' => $run->state['login_me'] ?? null,
             ],
             'owner'      => $owner,
+            'can_publish' => $run->status === Run::COMPLETE && $visitor->user !== null && $visitor->user->id === $run->testerId,
             'action'     => $action?->toArray(),
             'approvals'  => $owner ? $this->runner->approvalsRemaining($run) : 0,
             'counts'     => $this->results->counts($run->id),

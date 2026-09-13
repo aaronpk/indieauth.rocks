@@ -98,6 +98,7 @@ final class ReportController extends Controller
                 'target'    => (string) ($row['summary']['target'] ?? ''),
                 'published' => (string) $row['published_at'],
                 'version'   => substr((string) ($row['summary']['suite_version'] ?? ''), 0, 7),
+                'verified'  => (bool) ($row['summary']['verified'] ?? false),
             ],
             'counts'   => array_map('intval', $counts),
             'sections' => $sections,

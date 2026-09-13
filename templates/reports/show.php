@@ -23,6 +23,9 @@ $symbols = ['pass' => '✓', 'fail' => '✗', 'warning' => '!', 'skipped' => '�
         <?php if ($report['target'] !== '') { ?> · tested with <?= $report['target'] ?><?php } ?>
         <?php if ($report['version'] !== '') { ?> · suite <?= $report['version'] ?><?php } ?>
     </p>
+    <?php if (!$report['verified']) { ?>
+        <p class="alert">Unverified: signing in through this server did not succeed during the run, so these results do not show that the tester controls <?= $report['target'] ?>.</p>
+    <?php } ?>
 </div>
 
 <?php foreach ($sections as $section) { ?>

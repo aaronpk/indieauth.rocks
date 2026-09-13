@@ -25,6 +25,14 @@ final class Markers
     public const NAIVE      = 'naive';
     public const REFRESHED  = 'refreshed';
 
+    /** In C403, the returned me's server was looked up (as a careful client does). */
+    public const OTHER_SERVER_METADATA = 'other_server_metadata';
+
+    private const NAMES = [
+        self::PROFILE, self::METADATA, self::AUTHORIZE, self::ISSUED, self::REDEEMED,
+        self::ME_FETCHED, self::DECOY, self::NAIVE, self::REFRESHED, self::OTHER_SERVER_METADATA,
+    ];
+
     private const TTL = 30 * 86_400;
 
     public function __construct(private readonly RedisStore $redis)
@@ -45,18 +53,24 @@ final class Markers
     /** @return array<string, string> name => value */
     public function all(Run $run, int $n): array
     {
-        $prefix  = 'ct:m:' . $run->id . ':' . $n . ':';
+        // One MGET of the known names: pages grade every test on each view, and
+        // a SCAN per test would walk the whole keyspace dozens of times.
+        $keys    = array_map(fn (string $name): string => $this->key($run, $n, $name), self::NAMES);
+        $found   = $this->redis->getMany($keys);
         $markers = [];
 
-        foreach ($this->redis->scan($prefix . '*') as $key) {
-            $value = $this->redis->get($key);
-
-            if ($value !== null) {
-                $markers[substr($key, strlen($prefix))] = $value;
+        foreach (self::NAMES as $i => $name) {
+            if (isset($found[$keys[$i]])) {
+                $markers[$name] = $found[$keys[$i]];
             }
         }
 
         return $markers;
+    }
+
+    public function has(Run $run, int $n, string $name): bool
+    {
+        return $this->redis->exists($this->key($run, $n, $name));
     }
 
     /** @param array<string, mixed> $data */

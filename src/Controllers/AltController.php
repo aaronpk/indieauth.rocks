@@ -44,7 +44,9 @@ final class AltController extends Controller
         $this->exchanges->recordInbound($run->id, 'landing', $request);
 
         $url    = $this->config->altUrl(ltrim($request->path, '/')) . ($request->queryString ? '?' . $request->queryString : '');
-        $result = $this->runner->land($run, $url);
+        // No cookies reach this origin, so the landing cannot be tied to the
+        // run's browser: it only counts if it carries the attempt's state.
+        $result = $this->runner->land($run, $url, trusted: false);
         $caught = str_starts_with(ltrim($request->path, '/'), 'catch/') || substr_count(trim($request->path, '/'), '/') >= 2;
 
         return $this->page('landing', $caught ? 'Unregistered redirect' : 'Back to your test run', [

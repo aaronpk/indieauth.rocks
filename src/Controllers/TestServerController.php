@@ -96,7 +96,21 @@ final class TestServerController extends Controller
             'warnings'     => $result['warnings'],
             'owner'        => $visitor->user !== null && $visitor->user->id === $run->testerId,
             'action'       => $this->server->urls($run)->approve($n, $decoy),
-        ], visitor: $visitor)->allowingFormActionTo((string) Url::origin($redirect))->withNoStore(), $visitor);
+        ], visitor: $visitor)->allowingFormActionTo(...self::formActionOrigins($redirect))->withNoStore(), $visitor);
+    }
+
+    /**
+     * The origin a consent form may redirect to, only if it is a plain
+     * scheme://host[:port] — it comes from the request, so nothing else may
+     * reach the CSP header.
+     *
+     * @return list<string>
+     */
+    private static function formActionOrigins(string $redirectUri): array
+    {
+        $origin = Url::origin($redirectUri);
+
+        return $origin !== null && preg_match('#^https?://[a-z0-9.-]+(:\d{1,5})?$#', $origin) === 1 ? [$origin] : [];
     }
 
     /** @param array<string, string> $params */
@@ -116,9 +130,19 @@ final class TestServerController extends Controller
         $owner = $visitor->user !== null && $visitor->user->id === $run->testerId;
         $pin   = (string) ($run->state['pin'] ?? '');
 
-        if (!$owner && ($pin === '' || !hash_equals($pin, trim((string) $request->post('pin', ''))))) {
-            throw HttpException::forbidden('Enter the PIN shown on your client test run page to approve this test sign-in.');
+        if (!$owner) {
+            if ($this->limiter->exceeded('pin', $run->runKey, 10)) {
+                throw new HttpException(429, 'Too many wrong PINs for this client run. Wait an hour, or approve in a browser where you are signed in to this site.');
+            }
+
+            if ($pin === '' || !hash_equals($pin, trim((string) $request->post('pin', '')))) {
+                $this->limiter->hit('pin', $run->runKey, 3600);
+
+                throw HttpException::forbidden('Enter the PIN shown on your client test run page to approve this test sign-in.');
+            }
         }
+
+        $this->server->forgetAttempt((string) $request->post('attempt', ''));
 
         $url = $this->server->approve($run, $n, $attempt, $request->post('action') === 'approve');
 

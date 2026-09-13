@@ -46,6 +46,7 @@ final class ServerRunner
         'c3b'           => ['S320'],
         'c4'            => ['S311'],
         'c5'            => ['S312'],
+        'c8'            => ['S313'],
         'c6'            => ['S321'],
         'c7'            => ['S601', 'S602', 'S603'],
         'S322'          => ['S322'],
@@ -53,7 +54,11 @@ final class ServerRunner
         'introspection' => ['S803', 'S804'],
     ];
 
-    private const STEPS_WITHOUT_RECORDED_SKIP = ['c2b', 'c3b', 'c4', 'c5'];
+    private const STEPS_WITHOUT_RECORDED_SKIP = ['c2b', 'c3b', 'c4', 'c5', 'c8'];
+
+    /** Steps that are only needed when a code stops working after a failed redemption. */
+    private const IF_TOKEN_ENDPOINT_BURNS = ['c2b'];
+    private const IF_AUTHORIZATION_BURNS  = ['c3b', 'c4', 'c5', 'c8'];
 
     private readonly TokenClient $client;
     private readonly TokenFlows $flows;
@@ -110,7 +115,7 @@ final class ServerRunner
             $state['queue'] = ['login', ...ProbeGrader::ALL, 'c2', 'c2b', 'c3', 'c3b'];
 
             if ($extended) {
-                array_push($state['queue'], 'c4', 'c5', 'c6', 'S322', 'introspection');
+                array_push($state['queue'], 'c4', 'c5', 'c8', 'c6', 'S322', 'introspection');
             }
 
             if ($slow) {
@@ -182,7 +187,7 @@ final class ServerRunner
      *
      * @return array{handled: bool, message: string, tester: ?Tester}
      */
-    public function land(Run $run, string $url): array
+    public function land(Run $run, string $url, bool $trusted = true): array
     {
         $landing = Landing::parse($this->config, $url);
 
@@ -195,8 +200,11 @@ final class ServerRunner
 
         $attemptId = $landing->attemptId();
         if ($attemptId === null || !isset($state['attempts'][$attemptId])) {
-            // The state was lost or mangled: assume the request in progress.
-            $attemptId = $current['attempt'] ?? null;
+            // The state was lost or mangled. The request in progress stands in
+            // only when the landing is known to come from the run's own
+            // browser, or its path names that step (/catch/{key}/{step}).
+            $namesStep = $landing->segment !== null && $landing->segment === ($current['step'] ?? null);
+            $attemptId = $trusted || $namesStep ? ($current['attempt'] ?? null) : null;
         }
 
         if ($attemptId === null || !isset($state['attempts'][$attemptId])) {
@@ -213,6 +221,18 @@ final class ServerRunner
         $state['completed'][$attemptId] = true;
         if (($current['attempt'] ?? null) === $attemptId) {
             $state['current'] = null;
+        }
+
+        // Redeeming without the verifier would fail for this site's reasons,
+        // not the server's, so the step runs again instead of being graded.
+        if ($attempt->verifier === null && $attempt->intent === AuthorizationAttempt::APPROVE) {
+            if ($state['current'] === null) {
+                array_unshift($state['queue'], $step);
+            }
+
+            $this->runs->save($run, $state);
+
+            return ['handled' => true, 'message' => 'This step was left waiting so long that its saved PKCE verifier expired, so it will run again.', 'tester' => null];
         }
 
         $this->http->context($run->id, $step);
@@ -234,7 +254,7 @@ final class ServerRunner
             case in_array($step, ['c2', 'c2b'], true):
                 $this->onTokenCode($run, $state, $attempt, $landing, $message);
                 break;
-            case in_array($step, ['c3', 'c3b', 'c4', 'c5'], true):
+            case in_array($step, ['c3', 'c3b', 'c4', 'c5', 'c8'], true):
                 $this->onScopelessCode($run, $state, $attempt, $landing, $message);
                 break;
             case $step === 'c7':
@@ -360,8 +380,17 @@ final class ServerRunner
         }
 
         $attempt = AuthorizationAttempt::fromArray($state['attempts'][$current['attempt']], $this->vault->get($run, 'verifier:' . $current['attempt']));
-        $code    = (string) $this->vault->get($run, 'code:S304');
+        $code    = $this->vault->get($run, 'code:S304');
         $urls    = $this->urls($run);
+
+        // A missing code would be refused whether or not codes expire.
+        if ($code === null || $attempt->verifier === null) {
+            $this->results->record($run->id, Verdict::error('S304', 'The saved code expired from this site\'s storage before it could be tried. Run the slow tests again.'), 'S304');
+            $state['current'] = null;
+            $this->runs->save($run, $state);
+
+            return true;
+        }
 
         $this->http->context($run->id, 'S304');
         $reply = $this->client->redeem((string) $state['endpoints']['authorization'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
@@ -407,12 +436,11 @@ final class ServerRunner
     public function approvalsRemaining(Run $run): int
     {
         $state = $run->state;
-        $burns = ($state['flags']['burns_on_failure'] ?? null) === true;
         $count = 0;
 
         foreach ($state['queue'] ?? [] as $step) {
             if (in_array($step, ['login', 'c2', 'c3', 'c6', 'c7', 'S304', 'introspection', 'S220'], true)
-                || ($burns && in_array($step, ['c2b', 'c3b', 'c4', 'c5'], true))
+                || $this->neededBecauseCodesBurn($state, $step)
                 || ($step === 'S322' && ($state['flags']['accepts_no_pkce'] ?? false))) {
                 $count++;
             }
@@ -482,6 +510,10 @@ final class ServerRunner
                     $this->results->record($run->id, $verdict, 'login');
                 }
             }
+
+            foreach (['S301', 'S401', 'S402', 'S403', 'S406', 'S407', 'S408', 'S409', 'S410', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'] as $id) {
+                $this->results->record($run->id, Verdict::skipped($id, 'No token endpoint.'), 'login');
+            }
         }
 
         if ($graded['verified'] && $graded['me'] !== null) {
@@ -519,7 +551,7 @@ final class ServerRunner
 
             $verdict = match (true) {
                 $me === null                   => Verdict::error('S220', 'The code could not be redeemed to check whose profile it was for: ' . $reply->describe() . '.'),
-                $me === $urls->strangerProfile() => Verdict::fail('S220', 'Your server returned the profile URL the request asked for, without verifying it belongs to you.'),
+                strtolower(rtrim($me, '/')) === strtolower(rtrim($urls->strangerProfile(), '/')) => Verdict::fail('S220', 'Your server returned the profile URL the request asked for, without verifying it belongs to you.'),
                 default                        => Verdict::pass('S220', 'Your server returned ' . $me . ' rather than the profile URL the request asked for.'),
             };
         }
@@ -597,6 +629,11 @@ final class ServerRunner
         $refresh = $reply->string('refresh_token');
         $this->keepLive($run, 'B', $access, $refresh);
 
+        // S303 compares before and after: a token that never worked at the
+        // userinfo endpoint would otherwise look revoked.
+        $worked = $access !== null && $endpoints['userinfo'] !== null
+            && $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess();
+
         // S302, S303
         $replay = $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier);
         $this->results->record($run->id, $replay->isSuccess()
@@ -607,6 +644,8 @@ final class ServerRunner
 
         if ($access === null || $endpoints['userinfo'] === null) {
             $this->results->record($run->id, Verdict::skipped('S303', $access === null ? 'No access token was issued.' : 'No userinfo endpoint to check the tokens with.'), $step);
+        } elseif (!$worked) {
+            $this->results->record($run->id, Verdict::skipped('S303', 'The access token did not work at the userinfo endpoint even before the code was replayed, so revocation could not be checked.'), $step);
         } else {
             $check           = $this->client->userinfo($endpoints['userinfo'], $access);
             $revokedByReplay = !$check->isSuccess();
@@ -683,12 +722,15 @@ final class ServerRunner
         $endpoint = (string) $state['endpoints']['authorization'];
         $client   = $urls->clientId();
         $redirect = $urls->callback();
-        $burns    = $state['flags']['burns_on_failure'] ?? null;
+        // Learned separately from the token endpoint's behaviour: a server may
+        // treat failed redemptions differently at each endpoint.
+        $burns    = $state['flags']['burns_at_authorization'] ?? null;
 
         $negatives = match ($step) {
-            'c3'    => $burns === true ? ['S313'] : ['S311', 'S312', 'S313'],
+            'c3'    => ['S311', 'S312', 'S313'],
             'c4'    => ['S311'],
             'c5'    => ['S312'],
+            'c8'    => ['S313'],
             default => [],
         };
 
@@ -722,7 +764,7 @@ final class ServerRunner
             }, $step);
 
             if ($burns === null && $recorded !== []) {
-                $state['flags']['burns_on_failure'] = false;
+                $state['flags']['burns_at_authorization'] = false;
             }
 
             return;
@@ -731,7 +773,7 @@ final class ServerRunner
         if ($step === 'c3' && $recorded !== [] && $burns !== false) {
             // The code stopped working after the first rejected attempt, so only
             // that first rejection proves anything.
-            $state['flags']['burns_on_failure'] = true;
+            $state['flags']['burns_at_authorization'] = true;
 
             foreach (array_slice($recorded, 1) as $id) {
                 $this->results->record($run->id, Verdict::skipped($id, 'Inconclusive: the code was no longer valid after an earlier rejected attempt. Run the extended tests to check this separately.'), $step);
@@ -896,7 +938,7 @@ final class ServerRunner
             'c2'            => 'Approve a second request',
             'c2b', 'c3b'    => 'Approve one more request',
             'c3'            => 'Approve a request without permissions',
-            'c4', 'c5'      => 'Approve a request to test a single wrong redemption',
+            'c4', 'c5', 'c8' => 'Approve a request to test a single wrong redemption',
             'c6'            => 'Approve a request without permissions (token endpoint)',
             'c7'            => 'Approve one more request for the revocation tests',
             'S322'          => 'Approve a request without PKCE',
@@ -916,6 +958,7 @@ final class ServerRunner
             'c7'    => 'Your server revoked earlier tokens when a code was replayed, which is good. Approve this request to get fresh tokens for the revocation tests.',
             'c4'    => 'Approve this request. Its code is presented once without a verifier.',
             'c5'    => 'Approve this request. Its code is presented once by a different client.',
+            'c8'    => 'Approve this request. Its code is presented once with a different redirect URI.',
             'c6'    => 'Approve this request, which asks for no permissions. Its code is redeemed at your token endpoint, which must not issue an access token.',
             'S322'  => 'Approve this request, which has no PKCE challenge. Its code is then presented with a verifier.',
             'S304'  => 'Approve this request. The code is kept for 11 minutes before it is used.',
@@ -928,11 +971,11 @@ final class ServerRunner
     private function skipReason(array $state, string $step): ?string
     {
         $endpoints = $state['endpoints'];
-        $burns     = ($state['flags']['burns_on_failure'] ?? null) === true;
 
         return match (true) {
             $endpoints['authorization'] === null                                          => 'No authorization endpoint.',
-            in_array($step, ['c2b', 'c3b', 'c4', 'c5'], true) && !$burns                  => 'Not needed.',
+            in_array($step, [...self::IF_TOKEN_ENDPOINT_BURNS, ...self::IF_AUTHORIZATION_BURNS], true)
+                && !$this->neededBecauseCodesBurn($state, $step)                          => 'Not needed.',
             in_array($step, ['S208', 'S209', 'S210', 'S211', 'S212', 'S213', 'S214'], true) && !$this->config->hasDistinctAltOrigin()
                                                                                           => 'This site has no second origin configured.',
             $step === 'S216' && in_array('plain', (array) $state['methods'], true)        => 'Your server advertises the plain method.',
@@ -942,6 +985,12 @@ final class ServerRunner
             $step === 'S322' && !($state['flags']['accepts_no_pkce'] ?? false)            => 'Your server requires PKCE.',
             default                                                                       => null,
         };
+    }
+
+    private function neededBecauseCodesBurn(array $state, string $step): bool
+    {
+        return (in_array($step, self::IF_TOKEN_ENDPOINT_BURNS, true) && ($state['flags']['burns_on_failure'] ?? null) === true)
+            || (in_array($step, self::IF_AUTHORIZATION_BURNS, true) && ($state['flags']['burns_at_authorization'] ?? null) === true);
     }
 
     private function attemptFor(Run $run, array $state, string $step): AuthorizationAttempt
@@ -969,7 +1018,7 @@ final class ServerRunner
             'S219'            => AuthorizationAttempt::build($step, $cancel, $urls->clientId('x/../' . ClientUrls::MAIN), $urls->callback(), ['me' => $me]),
             'S220'            => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(), ['me' => $urls->strangerProfile()]),
             'c2', 'c2b', 'c7' => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(true), ['scope' => 'profile', 'me' => $me]),
-            'c3', 'c3b', 'c4', 'c5', 'c6', 'S304' => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(), ['me' => $me]),
+            'c3', 'c3b', 'c4', 'c5', 'c8', 'c6', 'S304' => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(), ['me' => $me]),
         };
 
         // A plain challenge is the verifier itself.

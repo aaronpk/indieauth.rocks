@@ -15,7 +15,7 @@ final class Redactor
 {
     public const SECRET_KEYS = [
         'code', 'code_verifier', 'access_token', 'refresh_token', 'token',
-        'client_secret', 'password', 'id_token', 'pin',
+        'client_secret', 'password', 'id_token', 'pin', '_csrf', 'attempt',
     ];
 
     private const SECRET_HEADERS = ['authorization', 'cookie', 'set-cookie', 'x-csrf-token'];
@@ -81,14 +81,18 @@ final class Redactor
 
         $type = strtolower(trim(explode(';', $contentType)[0]));
 
-        if ($type === 'application/x-www-form-urlencoded') {
-            $body = substr(self::url('?' . $body), 1);
-        } elseif ($type === 'application/json' || str_ends_with($type, '+json')) {
-            $decoded = json_decode($body, true, 32);
+        // The declared type is not trusted: implementations under test send
+        // tokens as text/html or with no type at all, so bodies that look like
+        // JSON or a form are redacted as such too.
+        $trimmed = ltrim($body);
+        $decoded = $type === 'application/json' || str_ends_with($type, '+json') || str_starts_with($trimmed, '{') || str_starts_with($trimmed, '[')
+            ? json_decode($body, true, 32)
+            : null;
 
-            if (is_array($decoded)) {
-                $body = (string) json_encode(self::redactArray($decoded), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-            }
+        if (is_array($decoded)) {
+            $body = (string) json_encode(self::redactArray($decoded), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        } elseif ($type === 'application/x-www-form-urlencoded' || preg_match('/^[^\s=&]+=[^\s&]*(?:&[^\s=&]+=[^\s&]*)*$/D', trim($body)) === 1) {
+            $body = substr(self::url('?' . trim($body)), 1);
         }
 
         if (strlen($body) > $limit) {

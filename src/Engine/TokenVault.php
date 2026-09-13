@@ -14,7 +14,9 @@ use IndieAuthRocks\Storage\RedisStore;
  */
 final class TokenVault
 {
-    private const TTL = 3600;
+    // Long enough for a browser run left open overnight; finish() clears it,
+    // and a step whose secrets expired anyway runs again rather than failing.
+    private const TTL = 86_400;
 
     public function __construct(
         private readonly RedisStore $redis,

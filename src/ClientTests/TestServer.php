@@ -131,7 +131,7 @@ final class TestServer
         // client reads its metadata to find out it is not the same server.
         $marker = match (true) {
             !$decoy     => Markers::METADATA,
-            $n === 403  => 'other_server_metadata',
+            $n === 403  => Markers::OTHER_SERVER_METADATA,
             default     => Markers::DECOY,
         };
 
@@ -157,6 +157,12 @@ final class TestServer
         $warnings = [];
         $step     = 'C' . $n;
 
+        // A reload of the same request (or Back after a wrong PIN) is not a
+        // client reusing state or a challenge.
+        // The path is included, so the same state sent to two different tests
+        // still counts as reuse.
+        $repeat = $this->markers->seenBefore($run, 'request', $request->path . '?' . $request->queryString);
+
         foreach ($request->repeatedQueryParameters() as $name) {
             $errors[] = sprintf('The %s parameter was sent more than once.', $name);
         }
@@ -171,7 +177,9 @@ final class TestServer
         // C202
         $clientId = $params['client_id'] ?? '';
         $problem  = $clientId === '' ? 'it is missing' : ClientId::problem($clientId);
-        $this->observe($run, Verdict::check('C202', $problem === null, 'client_id is valid: ' . $clientId, 'client_id is not valid: ' . $problem . '.'), $step);
+        // Summaries can end up in public reports, so they never repeat URLs
+        // that contain the run key.
+        $this->observe($run, Verdict::check('C202', $problem === null, 'client_id is valid.', 'client_id is not valid: ' . $problem . '.'), $step);
         if ($problem !== null) {
             $errors[] = 'client_id is not valid: ' . $problem . '.';
         }
@@ -184,7 +192,7 @@ final class TestServer
         if (!$pkceOk) {
             $errors[] = 'PKCE is required: send a 43-character code_challenge with code_challenge_method=S256.';
         } else {
-            $this->observe($run, Verdict::check('C206', !$this->markers->seenBefore($run, 'challenge', $challenge),
+            $this->observe($run, Verdict::check('C206', $repeat || !$this->markers->seenBefore($run, 'challenge', $challenge),
                 'A new code_challenge was used.', 'A code_challenge was reused from an earlier request.'), $step);
         }
 
@@ -193,7 +201,7 @@ final class TestServer
         $this->observe($run, match (true) {
             $state === null || $state === ''                  => Verdict::fail('C204', 'The request had no state parameter.'),
             strlen($state) < 16                               => Verdict::warning('C204', sprintf('state is only %d characters long.', strlen($state))),
-            $this->markers->seenBefore($run, 'state', $state) => Verdict::warning('C204', 'A state value was reused from an earlier request.'),
+            !$repeat && $this->markers->seenBefore($run, 'state', $state) => Verdict::warning('C204', 'A state value was reused from an earlier request.'),
             default                                           => Verdict::pass('C204', 'state is present and unique.'),
         }, $step);
         if ($state === null || $state === '') {
@@ -202,7 +210,7 @@ final class TestServer
 
         // C207
         $me = $params['me'] ?? null;
-        $this->observe($run, Verdict::check('C207', $me !== null && $me !== '', 'me was sent: ' . $me, 'The request did not include me.'), $step);
+        $this->observe($run, Verdict::check('C207', $me !== null && $me !== '', 'me was sent.', 'The request did not include me.'), $step);
 
         // C210
         $scopes = Scopes::parse($params['scope'] ?? '');
@@ -243,11 +251,15 @@ final class TestServer
             'params' => $params,
         ], self::TOKEN_TTL);
 
-        if ($n === 101) {
-            $this->markers->remember($run, 'client', ['client_id' => $clientId, 'redirect_uri' => $redirectUri]);
-        }
-
         return ['attempt' => $id, 'errors' => [], 'warnings' => $warnings, 'params' => $params];
+    }
+
+    /** Attempts are single-use: approving or denying consumes them. */
+    public function forgetAttempt(string $id): void
+    {
+        if (preg_match('/^[A-Za-z0-9_-]{24}$/', $id) === 1) {
+            $this->redis->delete('ct:attempt:' . $id);
+        }
     }
 
     /** @return array<string, mixed>|null */
@@ -311,8 +323,11 @@ final class TestServer
 
         $url = Url::appendQuery($redirect, $response);
 
+        // Remembered only after the owner (or PIN holder) approved, so nobody
+        // else can point C306 at their own redirect URI.
         if ($n === 101 && isset($response['code'])) {
-            $this->markers->remember($run, 'callback', ['url' => $url]);
+            $this->markers->remember($run, 'callback', ['url' => $url, 'code_hash' => hash('sha256', $response['code'])]);
+            $this->markers->remember($run, 'client', ['client_id' => (string) $params['client_id'], 'redirect_uri' => $redirect]);
         }
 
         return $url;
@@ -382,8 +397,12 @@ final class TestServer
         $code = $this->redis->takeJson('ct:code:' . $hash);
 
         if ($code === null) {
+            // C307 fails only if the replayed code itself comes back, not any
+            // code that happens to be redeemed twice after the replay.
             $used     = $this->redis->getJson('ct:used:' . $hash);
-            $replayed = isset($this->markers->all($run, 307)[Markers::ISSUED]);
+            $callback = $this->markers->recall($run, 'callback');
+            $replayed = $this->markers->has($run, 307, Markers::ISSUED)
+                && hash_equals((string) ($callback['code_hash'] ?? ''), $hash);
 
             if ($used !== null && (int) $used['run_id'] === $run->id && $replayed) {
                 $this->markers->first($run, 307, Markers::REDEEMED);
@@ -518,7 +537,9 @@ final class TestServer
         $refresh = Random::token(32);
         $data    = ['run_id' => $run->id, 'n' => $n, 'client_id' => $clientId, 'scope' => implode(' ', $scopes), 'me' => $me];
 
-        $this->redis->setJson('ct:token:' . hash('sha256', $access), $data, self::TOKEN_TTL);
+        // The token really expires when expires_in says, so clients that only
+        // refresh after a 401 can pass C502.
+        $this->redis->setJson('ct:token:' . hash('sha256', $access), $data, max(1, $expiresIn));
         $this->redis->setJson('ct:refresh:' . hash('sha256', $refresh), $data + ['generation' => $generation, 'expires_in' => $expiresIn], 30 * 86_400);
 
         return [

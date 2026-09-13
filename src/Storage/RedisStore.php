@@ -51,6 +51,28 @@ final class RedisStore
         return is_string($value) ? $value : null;
     }
 
+    /**
+     * @param list<string> $keys
+     * @return array<string, string> Only the keys that exist.
+     */
+    public function getMany(array $keys): array
+    {
+        if ($keys === []) {
+            return [];
+        }
+
+        $values = $this->call(fn (): mixed => $this->client->mGet(array_map(fn (string $k): string => $this->prefix . $k, $keys)));
+        $found  = [];
+
+        foreach ($keys as $i => $key) {
+            if (is_array($values) && is_string($values[$i] ?? null)) {
+                $found[$key] = $values[$i];
+            }
+        }
+
+        return $found;
+    }
+
     public function set(string $key, string $value, int $ttl): void
     {
         if ($ttl <= 0) {

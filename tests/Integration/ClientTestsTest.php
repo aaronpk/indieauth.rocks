@@ -199,6 +199,36 @@ final class ClientTestsTest extends AppTestCase
         $this->assertSame('signed_in', $client->signIn($this->urls->profile(101))['outcome']);
     }
 
+    public function test_pin_guessing_is_limited(): void
+    {
+        $authorize = $this->urls->authorization(101) . '?' . http_build_query([
+            'response_type'         => 'code',
+            'client_id'             => FakeIndieAuthClient::CLIENT_ID,
+            'redirect_uri'          => FakeIndieAuthClient::REDIRECT_URI,
+            'state'                 => str_repeat('s', 20),
+            'code_challenge'        => str_repeat('c', 43),
+            'code_challenge_method' => 'S256',
+            'me'                    => $this->urls->profile(101),
+        ]);
+
+        // Someone who is not the owner, without the PIN.
+        $this->cookies = [];
+        $consent = $this->request('GET', $authorize);
+        $this->assertSame(200, $consent->status);
+        preg_match('/name="_csrf" value="([^"]+)"/', $consent->body, $csrf);
+        preg_match('/name="attempt" value="([^"]+)"/', $consent->body, $attempt);
+
+        $guess = fn (string $pin): int => $this->request('POST', $this->urls->approve(101), [
+            '_csrf' => $csrf[1] ?? '', 'attempt' => $attempt[1] ?? '', 'action' => 'approve', 'pin' => $pin,
+        ])->status;
+
+        for ($i = 0; $i < 10; $i++) {
+            $this->assertSame(403, $guess('000000'));
+        }
+
+        $this->assertSame(429, $guess((string) $this->run->state['pin']));
+    }
+
     public function test_client_runs_are_private(): void
     {
         $this->cookies = [];

@@ -113,6 +113,24 @@ final class BrowserRunTest extends AppTestCase
         $this->assertSame(403, $this->request('GET', $run . '/tests/S101')->status);
     }
 
+    public function test_a_callback_from_another_browser_records_nothing_and_signs_nobody_in(): void
+    {
+        $this->server();
+
+        $home  = $this->request('GET', self::BASE);
+        $start = $this->request('POST', self::BASE . 'server-runs', ['_csrf' => self::csrf($home->body), 'me' => 'https://me.example/']);
+        $run   = $this->container->get(RunRepository::class)->findByPublicId(basename((string) $start->header('location')));
+        $this->request('GET', self::BASE . 'runs/' . $run->publicId);
+
+        // A victim follows a callback link crafted from the attacker's run.
+        $this->cookies = [];
+        $landing = $this->request('GET', self::BASE . 'callback/' . $run->runKey . '?code=attackers-code&state=lost');
+
+        $this->assertSame(403, $landing->status);
+        $this->assertNull($landing->header('location'));
+        $this->assertNotSame(200, $this->request('GET', self::BASE . 'account')->status);
+    }
+
     public function test_unregistered_redirects_land_on_the_catch_page(): void
     {
         $server = $this->server('acceptsUnregisteredRedirect');

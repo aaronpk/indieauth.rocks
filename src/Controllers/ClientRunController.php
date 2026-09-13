@@ -18,6 +18,7 @@ use IndieAuthRocks\Http\Response;
 use IndieAuthRocks\Identity\Guard;
 use IndieAuthRocks\Identity\Visitor;
 use IndieAuthRocks\Storage\ExchangeRepository;
+use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
 use IndieAuthRocks\View\Template;
@@ -34,6 +35,7 @@ final class ClientRunController extends Controller
         private readonly RunRepository $runs,
         private readonly ResultRepository $results,
         private readonly ExchangeRepository $exchanges,
+        private readonly RateLimiter $limiter,
     ) {
         parent::__construct($view, $config, $guard);
     }
@@ -71,6 +73,10 @@ final class ClientRunController extends Controller
 
         if (!$visitor->isAuthenticated()) {
             throw HttpException::forbidden('Sign in first.');
+        }
+
+        if ($this->limiter->hit('client-run-start', (string) $visitor->user()->id, 86_400) > 50) {
+            throw new HttpException(429, 'You have started a lot of client runs today. Reuse an existing one, or try again tomorrow.');
         }
 
         $pin = str_pad((string) random_int(0, 999_999), 6, '0', STR_PAD_LEFT);

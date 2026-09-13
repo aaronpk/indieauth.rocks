@@ -189,6 +189,7 @@ final class Bootstrap
             $c->get(RunRepository::class),
             $c->get(ResultRepository::class),
             $c->get(ExchangeRepository::class),
+            $c->get(RateLimiter::class),
         ));
 
         $container->set(ClientDocsController::class, static fn (Container $c): ClientDocsController => new ClientDocsController(

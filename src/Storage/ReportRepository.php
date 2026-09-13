@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace IndieAuthRocks\Storage;
 
+use IndieAuthRocks\Engine\Catalog;
 use IndieAuthRocks\Engine\Run;
 
 /**
@@ -55,6 +56,9 @@ final class ReportRepository
                     'run'           => $run->publicId,
                     'target'        => $run->targetUrl,
                     'suite_version' => RunRepository::suiteVersion(),
+                    // A server report is only tied to its target if signing in
+                    // through that server worked during the run.
+                    'verified'      => $run->kind === Catalog::CLIENT || isset($run->state['login_me']),
                     'counts'        => $counts,
                     'results'       => $snapshot,
                 ], JSON_UNESCAPED_SLASHES | JSON_INVALID_UTF8_SUBSTITUTE),

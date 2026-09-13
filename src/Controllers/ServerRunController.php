@@ -228,10 +228,20 @@ final class ServerRunController extends Controller
 
         $this->exchanges->recordInbound($run->id, 'landing', $request);
 
+        $visitor = $this->guard->begin($request);
+
+        // Only the browser that started the run may complete its steps.
+        // Otherwise a crafted callback URL could sign a victim in as the
+        // attacker's profile (login CSRF) or write results into the run.
+        if (!$this->isOwner($request, $visitor, $run)) {
+            return $this->guard->commit($this->page('message', 'Not your test run', [
+                'heading' => 'This redirect belongs to someone else\'s test run',
+                'message' => 'Nothing was recorded. If you started this run in another browser, continue it there.',
+            ], 403, $visitor), $visitor);
+        }
+
         $url    = $this->config->url(ltrim($request->path, '/')) . ($request->queryString ? '?' . $request->queryString : '');
         $result = $this->runner->land($run, $url);
-
-        $visitor = $this->guard->begin($request);
 
         if ($result['tester'] !== null) {
             $visitor = $this->guard->logIn($visitor, $result['tester']);

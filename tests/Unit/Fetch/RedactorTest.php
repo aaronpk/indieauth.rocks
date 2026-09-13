@@ -42,6 +42,18 @@ final class RedactorTest extends TestCase
         $this->assertStringContainsString('https://me.example/', (string) $json);
     }
 
+    public function test_redacts_bodies_whatever_content_type_they_claim(): void
+    {
+        $json = Redactor::body('{"access_token":"tok123","me":"https://me.example/"}', 'text/html', 1000);
+        $this->assertStringNotContainsString('tok123', (string) $json);
+        $this->assertStringContainsString('https://me.example/', (string) $json);
+
+        $form = Redactor::body('code=c0de&_csrf=csrf99&attempt=att77&pin=123456', '', 1000);
+        foreach (['c0de', 'csrf99', 'att77', '123456'] as $secret) {
+            $this->assertStringNotContainsString($secret, (string) $form);
+        }
+    }
+
     public function test_truncates_long_bodies(): void
     {
         $this->assertStringEndsWith('[truncated]', (string) Redactor::body(str_repeat('x', 50), 'text/plain', 10));

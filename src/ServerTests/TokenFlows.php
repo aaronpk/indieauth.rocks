@@ -134,7 +134,10 @@ final class TokenFlows
             $verdicts[] = Verdict::skipped('S504', 'Your server does not rotate refresh tokens.');
             $verdicts[] = Verdict::skipped('S505', 'Your server does not rotate refresh tokens.');
         } else {
-            $reuse = $this->client->refresh($token, $refresh, $clientId);
+            // S505 needs the newest token to work beforehand, or a broken
+            // userinfo endpoint would look like a revoked token family.
+            $worked = $endpoints['userinfo'] !== null && $this->client->userinfo($endpoints['userinfo'], $liveAccess)->isSuccess();
+            $reuse  = $this->client->refresh($token, $refresh, $clientId);
 
             if ($reuse->isSuccess()) {
                 $verdicts[]  = Verdict::warning('S504', 'The replaced refresh token still works.');
@@ -146,6 +149,8 @@ final class TokenFlows
 
                 if ($endpoints['userinfo'] === null) {
                     $verdicts[] = Verdict::skipped('S505', 'No userinfo endpoint to check whether the newest tokens were revoked.');
+                } elseif (!$worked) {
+                    $verdicts[] = Verdict::skipped('S505', 'The newest access token did not work at the userinfo endpoint even before the old refresh token was reused, so revocation could not be checked.');
                 } else {
                     $check = $this->client->userinfo($endpoints['userinfo'], $liveAccess);
                     $verdicts[] = Verdict::check('S505', !$check->isSuccess(),
@@ -185,12 +190,15 @@ final class TokenFlows
         }
 
         $verdicts = [];
+        $worked   = $endpoints['userinfo'] !== null && $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess();
 
         $revoke     = $this->client->revoke($endpoints['revocation'], $access);
         $verdicts[] = Verdict::check('S601', $revoke->status() === 200, 'Returned HTTP 200.', 'Revoking an access token returned ' . $revoke->describe() . '.');
 
         if ($endpoints['userinfo'] === null) {
             $verdicts[] = Verdict::skipped('S602', 'No userinfo endpoint to check the revoked token with.');
+        } elseif (!$worked) {
+            $verdicts[] = Verdict::skipped('S602', 'The access token did not work at the userinfo endpoint even before it was revoked, so revocation could not be checked.');
         } else {
             $check      = $this->client->userinfo($endpoints['userinfo'], $access);
             $verdicts[] = Verdict::check('S602', !$check->isSuccess(), 'The revoked token is refused (' . $check->describe() . ').', 'The revoked access token still works.');

@@ -22,6 +22,7 @@ final class SafeFetcher implements HttpClient
     private const CONNECT_TIMEOUT = 5;
 
     private readonly IpGuard $guard;
+    private readonly bool $anyPort;
 
     public function __construct(
         bool $allowLoopback = false,
@@ -29,7 +30,8 @@ final class SafeFetcher implements HttpClient
         private readonly ?string $caFile = null,
         private readonly string $userAgent = 'IndieAuth Rocks',
     ) {
-        $this->guard = new IpGuard($allowLoopback, $allowPrivate);
+        $this->guard   = new IpGuard($allowLoopback, $allowPrivate);
+        $this->anyPort = $allowLoopback || $allowPrivate;
     }
 
     public function send(HttpRequest $request): FetchResult
@@ -44,6 +46,17 @@ final class SafeFetcher implements HttpClient
         $host   = $parts['host'];
         $scheme = strtolower($parts['scheme']);
         $port   = $parts['port'] ?? ($scheme === 'https' ? 443 : 80);
+
+        // curl converts internationalised names itself, so its host would not
+        // match the CURLOPT_RESOLVE pin and it would do its own DNS lookup.
+        if (preg_match('/[^\x21-\x7e]/', $host) === 1) {
+            throw FetchException::refused('Internationalised hostnames must be written in their xn-- (punycode) form.');
+        }
+
+        // Web servers, not other services that happen to listen on a host.
+        if (!$this->anyPort && $port < 1024 && !in_array($port, [80, 443], true)) {
+            throw FetchException::refused(sprintf('Port %d is not allowed; use 80, 443 or a port above 1023.', $port));
+        }
 
         $address = $this->resolveAndVet($host);
 

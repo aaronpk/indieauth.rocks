@@ -12,7 +12,6 @@ use IndieAuthRocks\Engine\Run;
 use IndieAuthRocks\Http\HttpException;
 use IndieAuthRocks\Http\Request;
 use IndieAuthRocks\Http\Response;
-use IndieAuthRocks\Http\Url;
 use IndieAuthRocks\Identity\Guard;
 use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
@@ -96,21 +95,7 @@ final class TestServerController extends Controller
             'warnings'     => $result['warnings'],
             'owner'        => $visitor->user !== null && $visitor->user->id === $run->testerId,
             'action'       => $this->server->urls($run)->approve($n, $decoy),
-        ], visitor: $visitor)->allowingFormActionTo(...self::formActionOrigins($redirect))->withNoStore(), $visitor);
-    }
-
-    /**
-     * The origin a consent form may redirect to, only if it is a plain
-     * scheme://host[:port] — it comes from the request, so nothing else may
-     * reach the CSP header.
-     *
-     * @return list<string>
-     */
-    private static function formActionOrigins(string $redirectUri): array
-    {
-        $origin = Url::origin($redirectUri);
-
-        return $origin !== null && preg_match('#^https?://[a-z0-9.-]+(:\d{1,5})?$#', $origin) === 1 ? [$origin] : [];
+        ], visitor: $visitor)->withoutFormActionRestriction()->withNoStore(), $visitor);
     }
 
     /** @param array<string, string> $params */

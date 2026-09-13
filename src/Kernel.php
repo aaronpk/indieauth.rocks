@@ -125,21 +125,16 @@ final class Kernel
     }
 
     /**
-     * The form-action source list for one response.
+     * The form-action directive for one response, or nothing.
      *
-     * `'self'` alone is wrong for an authorization server: the last hop of every
-     * flow is a form submission that redirects to a client's redirect URI, which is
-     * cross-origin by definition. WebKit and Chromium check `form-action` against a
-     * navigation's whole redirect chain, so that hop is blocked — which is what
-     * "Sending form data to …/consent violates … form-action 'self'" is reporting.
-     *
-     * Pages that are part of a flow therefore declare the client origins they may
-     * reach, always from stored client configuration rather than from the request.
-     * Every other page keeps the bare `'self'`.
+     * The client-test consent form redirects to the client's redirect URI, and
+     * often on from there: WebKit and Chromium check `form-action` against that
+     * whole redirect chain, so allowing one origin is not enough. Consent pages
+     * omit the directive and every other page keeps `'self'`.
      */
     private static function formAction(Response $response): string
     {
-        return implode(' ', ["'self'", ...$response->formActionOrigins()]);
+        return $response->formActionUnrestricted() ? '' : "form-action 'self'; ";
     }
 
     private function withSecurityHeaders(Response $response): Response
@@ -161,7 +156,7 @@ final class Kernel
                 // same-origin request the browser makes.
                 "default-src 'none'; script-src 'self'; style-src 'self'; "
                 . "img-src 'self' data: https:; connect-src 'self'; "
-                . 'form-action ' . self::formAction($response) . '; '
+                . self::formAction($response)
                 . "frame-ancestors 'none'; base-uri 'none'",
             );
         }

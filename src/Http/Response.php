@@ -10,25 +10,21 @@ namespace IndieAuthRocks\Http;
  */
 final class Response
 {
-    /**
-     * @param array<string, list<string>> $headers
-     * @param list<string>                $formActionOrigins
-     */
+    /** @param array<string, list<string>> $headers */
     private function __construct(
         public readonly int $status,
         public readonly string $body,
         private readonly array $headers = [],
         /**
-         * Extra origins a form on this page may submit to, widening the
-         * `form-action` directive Kernel sets.
+         * Whether Kernel leaves `form-action` out of this page's policy.
          *
-         * Needed because an authorization server exists to end form submissions at
-         * a client's redirect URI, which is cross-origin by definition. Browsers
-         * that check `form-action` against a navigation's redirect chain — WebKit
-         * and Chromium do; Firefox does not — otherwise block the very last hop of
-         * every authorization flow.
+         * The client-test consent form ends at the client's redirect URI.
+         * Chromium and WebKit check `form-action` against every redirect that
+         * follows a submission, and clients commonly redirect again from their
+         * callback or use a custom-scheme redirect URI. No list of origins can
+         * cover that chain, so consent pages drop the directive.
          */
-        private readonly array $formActionOrigins = [],
+        private readonly bool $formActionUnrestricted = false,
     ) {
     }
 
@@ -89,23 +85,20 @@ final class Response
     }
 
     /**
-     * Permit a form on this page to submit to these origins as well as its own.
+     * Let a form on this page end wherever the redirects after it lead.
      *
-     * Every caller must source them from stored client configuration, never from the
-     * request: echoing a request parameter here would let a caller widen this
-     * server's own policy. See ClientRedirectOrigins.
+     * Only for pages whose form finishes an authorization flow. Templates are
+     * escaped and no inline script runs, so `form-action` is defence in depth
+     * the rest of the site keeps.
      */
-    public function allowingFormActionTo(string ...$origins): self
+    public function withoutFormActionRestriction(): self
     {
-        $merged = array_values(array_unique([...$this->formActionOrigins, ...$origins]));
-
-        return new self($this->status, $this->body, $this->headers, $merged);
+        return new self($this->status, $this->body, $this->headers, true);
     }
 
-    /** @return list<string> */
-    public function formActionOrigins(): array
+    public function formActionUnrestricted(): bool
     {
-        return $this->formActionOrigins;
+        return $this->formActionUnrestricted;
     }
 
     public function withHeader(string $name, string $value): self
@@ -113,9 +106,9 @@ final class Response
         $headers = $this->headers;
         $headers[strtolower($name)] = [$value];
 
-        // Carried through, or a later withNoStore() would silently discard the
-        // form-action widening a controller had already asked for.
-        return new self($this->status, $this->body, $headers, $this->formActionOrigins);
+        // Carried through, or a later withNoStore() would silently restore the
+        // form-action restriction a controller had already lifted.
+        return new self($this->status, $this->body, $headers, $this->formActionUnrestricted);
     }
 
     /** Append rather than replace. Required for multiple Set-Cookie headers. */
@@ -124,7 +117,7 @@ final class Response
         $headers = $this->headers;
         $headers[strtolower($name)][] = $value;
 
-        return new self($this->status, $this->body, $headers, $this->formActionOrigins);
+        return new self($this->status, $this->body, $headers, $this->formActionUnrestricted);
     }
 
     public function withCookie(Cookie $cookie): self

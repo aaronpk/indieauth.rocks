@@ -36,6 +36,7 @@ final class RouteAuditTest extends AppTestCase
 
                 $path = strtr($route['pattern'], [
                     '{run}'  => '01ARZ3NDEKTSV4RRFFQ69G5FAV',
+                    '{test}' => 'S207',
                     '{key}'  => 'abcdefghijklmnop',
                     '{n}'    => '101',
                     '{id}'   => '1',

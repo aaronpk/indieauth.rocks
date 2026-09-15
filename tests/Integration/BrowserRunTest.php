@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace IndieAuthRocks\Tests\Integration;
 
+use IndieAuthRocks\Http\Response;
 use IndieAuthRocks\Storage\RunRepository;
 use IndieAuthRocks\Tests\Support\AppTestCase;
 use IndieAuthRocks\Tests\Support\FakeIndieAuthServer;
@@ -31,6 +32,19 @@ final class BrowserRunTest extends AppTestCase
         return $m[1] ?? '';
     }
 
+    /** From the run page, start the next step (or continue the one in progress), and return its page, or null if there is none. */
+    private function openStep(string $runUrl, Response $runPage): ?Response
+    {
+        if (preg_match('#<form method="post" action="(/runs/[^"]+/start)"#', $runPage->body, $form) === 1) {
+            $started = $this->request('POST', self::BASE . ltrim($form[1], '/'), ['_csrf' => self::csrf($runPage->body)]);
+            $this->assertSame(303, $started->status);
+        }
+
+        $step = $this->request('GET', $runUrl . '/step');
+
+        return $step->status === 200 ? $step : null;
+    }
+
     public function test_a_person_can_run_the_server_suite_in_the_browser(): void
     {
         $server = $this->server();
@@ -48,6 +62,14 @@ final class BrowserRunTest extends AppTestCase
 
             if (str_contains($page->body, 'data-action="finished"')) {
                 break;
+            }
+
+            // The list names what is next; its instructions are one click away.
+            $this->assertStringNotContainsString('/go/', $page->body);
+            $page = $this->openStep($runUrl, $page);
+
+            if ($page === null) {
+                continue;
             }
 
             preg_match('/data-step="([^"]*)" data-intent="([^"]*)"/', $page->body, $meta);
@@ -75,7 +97,7 @@ final class BrowserRunTest extends AppTestCase
                 continue;
             }
 
-            $this->fail('The run page offered nothing to do: ' . strip_tags(substr($page->body, 0, 3000)));
+            $this->fail('The step page offered nothing to do: ' . strip_tags(substr($page->body, 0, 3000)));
         }
 
         $this->assertStringContainsString('data-action="finished"', $page->body);
@@ -129,6 +151,76 @@ final class BrowserRunTest extends AppTestCase
         $this->assertSame(403, $landing->status);
         $this->assertNull($landing->header('location'));
         $this->assertNotSame(200, $this->request('GET', self::BASE . 'account')->status);
+    }
+
+    public function test_a_redirect_back_is_announced_and_a_check_can_be_run_again_from_its_page(): void
+    {
+        $server = $this->server();
+
+        $home   = $this->request('GET', self::BASE);
+        $start  = $this->request('POST', self::BASE . 'server-runs', ['_csrf' => self::csrf($home->body), 'me' => 'me.example']);
+        $runUrl = self::BASE . ltrim((string) $start->header('location'), '/');
+        $runId  = basename($runUrl);
+
+        // The list says what is next, but nothing starts until asked.
+        $page = $this->request('GET', $runUrl);
+        $this->assertStringContainsString('data-action="upcoming" data-step="login"', $page->body);
+        $this->assertStringNotContainsString('/go/', $page->body);
+        $this->assertSame([], $this->container->get(RunRepository::class)->findByPublicId($runId)->state['attempts']);
+
+        // Sign in. The question about the approval screen keeps the step open.
+        $step = $this->openStep($runUrl, $page);
+        preg_match('#href="(/runs/[^"]+/go/[^"]+)"#', $step->body, $go);
+        $location = $server->authorize((string) $this->request('GET', self::BASE . ltrim($go[1], '/'))->header('location'), 'approve');
+        $this->assertSame('/runs/' . $runId . '/step', $this->request('GET', (string) $location)->header('location'));
+
+        $step = $this->request('GET', $runUrl . '/step');
+        $this->assertStringContainsString('Your server redirected back with an authorization code for this step', $step->body);
+        $answered = $this->request('POST', $runUrl . '/answer', ['_csrf' => self::csrf($step->body), 'key' => 'S206', 'value' => 'both']);
+        $this->assertSame('/runs/' . $runId, $answered->header('location'));
+
+        // Back at the list, which says how sign-in went and what is next.
+        $page = $this->request('GET', $runUrl);
+        $this->assertStringContainsString('Finished Sign in with your server. Results:', $page->body);
+        $this->assertStringContainsString('data-action="upcoming" data-step="S207"', $page->body);
+        $this->assertStringContainsString('class="result-not_run is-next"', $page->body);
+
+        // S207: cancel, and land back on the list. The last step's notice was shown once and is gone.
+        $step = $this->openStep($runUrl, $page);
+        $this->assertStringContainsString('data-step="S207"', $step->body);
+        $this->assertStringNotContainsString('Finished Sign in with your server', $step->body);
+        preg_match('#href="(/runs/[^"]+/go/[^"]+)"#', $step->body, $go);
+        $location = $server->authorize((string) $this->request('GET', self::BASE . ltrim($go[1], '/'))->header('location'), 'cancel');
+        $this->assertSame('/runs/' . $runId, $this->request('GET', (string) $location)->header('location'));
+
+        $page = $this->request('GET', $runUrl);
+        $this->assertStringContainsString('Your server redirected back with error=access_denied for S207', $page->body);
+        $this->assertStringContainsString('data-action="upcoming" data-step="S208"', $page->body);
+        $this->assertStringContainsString('<td class="test-id"><a href="/runs/' . $runId . '/tests/S207">', $page->body);
+
+        // The test's page describes it, lists the redirect back, and offers to run it again.
+        $test = $this->request('GET', $runUrl . '/tests/S207');
+        $this->assertSame(200, $test->status);
+        $this->assertStringContainsString('Passes when:', $test->body);
+        $this->assertStringContainsString('/callback/', $test->body);
+        $this->assertStringContainsString('Run this test again', $test->body);
+
+        $rerun = $this->request('POST', $runUrl . '/tests/S207/rerun', ['_csrf' => self::csrf($test->body)]);
+        $this->assertSame(303, $rerun->status);
+        $this->assertSame('/runs/' . $runId . '/step', $rerun->header('location'));
+
+        $step = $this->request('GET', $runUrl . '/step');
+        $this->assertStringContainsString('data-step="S207"', $step->body);
+        $this->assertStringContainsString('Running S207 again.', $step->body);
+
+        // Tests checked with others explain why there is no button.
+        $login = $this->request('GET', $runUrl . '/tests/S301');
+        $this->assertStringNotContainsString('Run this test again', $login->body);
+        $this->assertStringContainsString('Start a new run', $login->body);
+
+        // Another browser cannot.
+        $this->cookies = [];
+        $this->assertContains($this->request('POST', $runUrl . '/tests/S207/rerun', ['_csrf' => 'x'])->status, [400, 403]);
     }
 
     public function test_unregistered_redirects_land_on_the_catch_page(): void

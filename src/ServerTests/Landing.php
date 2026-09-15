@@ -107,6 +107,20 @@ final class Landing
         return $this->param('error');
     }
 
+    /** What the redirect carried, as a phrase: "with an authorization code". */
+    public function describe(): string
+    {
+        $error       = $this->error();
+        $description = mb_substr((string) $this->param('error_description'), 0, 200);
+
+        return match (true) {
+            $this->code() !== null             => 'with an authorization code',
+            $error !== null && $description !== '' => sprintf('with error=%s (%s)', $error, $description),
+            $error !== null                    => 'with error=' . $error,
+            default                            => 'with neither a code nor an error',
+        };
+    }
+
     /** Whether the server sent the browser somewhere it should not have. */
     public function isUnregistered(): bool
     {

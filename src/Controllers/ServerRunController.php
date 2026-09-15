@@ -9,6 +9,7 @@ use IndieAuthRocks\Crypto\Random;
 use IndieAuthRocks\Engine\Catalog;
 use IndieAuthRocks\Engine\Outcome;
 use IndieAuthRocks\Engine\Run;
+use IndieAuthRocks\Engine\TestDefinition;
 use IndieAuthRocks\Http\Cookie;
 use IndieAuthRocks\Http\HttpException;
 use IndieAuthRocks\Http\Request;
@@ -29,6 +30,9 @@ final class ServerRunController extends Controller
     private const START_BUCKET = 'start:ip';
     private const START_LIMIT  = 10;
     private const START_WINDOW = 600;
+
+    private const RERUN_BUCKET = 'rerun:ip';
+    private const RERUN_LIMIT  = 20;
 
     public function __construct(
         Template $view,
@@ -83,8 +87,14 @@ final class ServerRunController extends Controller
     {
         $run     = $this->run($params);
         $visitor = $this->guard->begin($request);
-        $owner   = $this->isOwner($request, $visitor, $run);
-        $action  = $owner ? $this->runner->next($run) : null;
+        $owner    = $this->isOwner($request, $visitor, $run);
+        $upcoming = $owner ? $this->runner->upcoming($run) : null;
+
+        // Only steps that cannot run are left: next() records them as skipped and finishes the run.
+        if ($owner && $upcoming === null && !$run->isFinished()) {
+            $this->runner->next($run);
+        }
+
         $run     = $this->runs->find($run->id) ?? $run;
         $flash   = $this->guard->takeFlash($visitor);
         $results = $this->results->forRun($run->id);
@@ -107,6 +117,7 @@ final class ServerRunController extends Controller
                     'label'   => Outcome::tryFrom((string) ($result['outcome'] ?? 'not_run'))?->label() ?? '',
                     'summary' => (string) ($result['summary'] ?? ''),
                     'has_log' => $owner && $result !== null && $result['step'] !== null,
+                    'next'    => $upcoming !== null && in_array($test->id, $upcoming['tests'], true),
                 ];
             }
 
@@ -126,7 +137,8 @@ final class ServerRunController extends Controller
             ],
             'owner'      => $owner,
             'can_publish' => $run->status === Run::COMPLETE && $visitor->user !== null && $visitor->user->id === $run->testerId,
-            'action'     => $action?->toArray(),
+            'upcoming'   => $upcoming,
+            'finished'   => $run->isFinished(),
             'approvals'  => $owner ? $this->runner->approvalsRemaining($run) : 0,
             'counts'     => $this->results->counts($run->id),
             'sections'   => $sections,
@@ -146,48 +158,118 @@ final class ServerRunController extends Controller
             throw HttpException::forbidden('Only the person who started this run can continue it.');
         }
 
-        $action = $this->runner->next($run);
+        $action = $this->runner->currentAction($run);
 
-        if ($action->type !== Action::NAVIGATE || $action->attemptId !== ($params['attempt'] ?? null) || $action->url === null) {
-            return Response::seeOther('/runs/' . $run->publicId);
+        if ($action?->type !== Action::NAVIGATE || $action->attemptId !== ($params['attempt'] ?? null) || $action->url === null) {
+            return Response::seeOther($this->afterStepUrl($run));
         }
 
+        $this->runner->markOpened($run, $action->attemptId);
+
         return Response::redirect($action->url)->withNoStore();
+    }
+
+    /**
+     * Start the next step. The run page only says what it is, so nobody
+     * loses their place when a step finishes.
+     *
+     * @param array<string, string> $params
+     */
+    public function startStep(Request $request, array $params = []): Response
+    {
+        return $this->ownerAction($request, $params, function (Run $run): ?string {
+            $this->runner->next($run);
+
+            return null;
+        });
+    }
+
+    /**
+     * The step in progress: its instructions, the request to open, and any question.
+     *
+     * @param array<string, string> $params
+     */
+    public function step(Request $request, array $params = []): Response
+    {
+        $run = $this->run($params);
+
+        if (!$this->isOwner($request, $this->guard->visitor($request), $run)) {
+            throw HttpException::forbidden('Only the person who started this run can continue it.');
+        }
+
+        $visitor = $this->guard->begin($request);
+        $action  = $this->runner->currentAction($run);
+
+        if ($action === null) {
+            return $this->guard->commit(Response::seeOther('/runs/' . $run->publicId), $visitor);
+        }
+
+        $flash = $this->guard->takeFlash($visitor);
+
+        return $this->guard->commit($this->page('run/step', $action->title, [
+            'run'       => ['public_id' => $run->publicId, 'target' => (string) $run->targetUrl],
+            'action'    => $action->toArray(),
+            'approvals' => $this->runner->approvalsRemaining($run),
+            'csrf'      => $visitor->session()->csrf,
+            'notice'    => is_string($flash['message'] ?? null) && $flash['message'] !== '' ? $flash['message'] : null,
+        ], visitor: $visitor)->withNoStore(), $visitor);
     }
 
     /** @param array<string, string> $params */
     public function answer(Request $request, array $params = []): Response
     {
-        return $this->ownerAction($request, $params, function (Run $run) use ($request): void {
-            $this->runner->answer($run, (string) $request->post('key', ''), (string) $request->post('value', ''));
+        return $this->ownerAction($request, $params, function (Run $run) use ($request): ?string {
+            $action = $this->runner->currentAction($run);
+
+            if ($action === null || !$this->runner->answer($run, (string) $request->post('key', ''), (string) $request->post('value', ''))) {
+                return 'That answer did not match the step in progress, so nothing was recorded.';
+            }
+
+            return $this->finishedNotice($run, $action);
         });
     }
 
     /** @param array<string, string> $params */
     public function skip(Request $request, array $params = []): Response
     {
-        return $this->ownerAction($request, $params, fn (Run $run) => $this->runner->skip($run));
+        return $this->ownerAction($request, $params, function (Run $run): ?string {
+            $action = $this->runner->currentAction($run);
+            $this->runner->skip($run);
+
+            return $action === null ? null : 'You skipped ' . $action->title . '.';
+        });
     }
 
     /** @param array<string, string> $params */
     public function resume(Request $request, array $params = []): Response
     {
-        return $this->ownerAction($request, $params, fn (Run $run) => $this->runner->resume($run));
+        return $this->ownerAction($request, $params, function (Run $run): ?string {
+            $action = $this->runner->currentAction($run);
+
+            return $action !== null && $this->runner->resume($run) ? $this->finishedNotice($run, $action) : null;
+        });
     }
 
-    /** @param array<string, string> $params */
+    /**
+     * One test in a run: what it checks, its result, how to run it again, and
+     * the HTTP log.
+     *
+     * @param array<string, string> $params
+     */
     public function transcript(Request $request, array $params = []): Response
     {
-        $run     = $this->run($params);
-        $visitor = $this->guard->visitor($request);
+        $run = $this->run($params);
 
-        if (!$this->isOwner($request, $visitor, $run)) {
+        if (!$this->isOwner($request, $this->guard->visitor($request), $run)) {
             throw HttpException::forbidden('Transcripts are only visible to the person who ran the tests.');
         }
 
-        $test   = Catalog::find(strtoupper($params['test'] ?? '')) ?? throw HttpException::notFound();
-        $result = $this->results->forRun($run->id)[$test->id] ?? null;
-        $step   = $result['step'] ?? null;
+        $visitor = $this->guard->begin($request);
+        $test    = $this->serverTest($params);
+        $flash   = $this->guard->takeFlash($visitor);
+        $result  = $this->results->forRun($run->id)[$test->id] ?? null;
+        $step    = $result['step'] ?? null;
+        $reason  = $this->runner->rerunReason($run, $test->id, $result);
 
         $exchanges = $step === null ? [] : array_map(static fn (array $e): array => [
             'direction'        => (string) $e['direction'],
@@ -202,14 +284,62 @@ final class ServerRunController extends Controller
             'created_at'       => (string) $e['created_at'],
         ], $this->exchanges->forStep($run->id, (string) $step));
 
-        return $this->page('run/transcript', $test->id . ' transcript', [
-            'run_id'    => $run->publicId,
-            'test'      => $test->toArray(),
-            'outcome'   => (string) ($result['outcome'] ?? 'not_run'),
-            'summary'   => (string) ($result['summary'] ?? ''),
-            'exchanges' => $exchanges,
-            'wide'      => true,
-        ], visitor: $visitor)->withNoStore();
+        return $this->guard->commit($this->page('run/transcript', $test->id . ' ' . $test->title, [
+            'run_id'       => $run->publicId,
+            'test'         => $test->toArray(),
+            'outcome'      => (string) ($result['outcome'] ?? 'not_run'),
+            'summary'      => (string) ($result['summary'] ?? ''),
+            'rerun_reason' => $reason,
+            'rerun_hint'   => $reason !== null ? '' : (in_array($step, ServerRunner::AUTOMATIC_STEPS, true)
+                ? 'This runs all of the discovery and endpoint checks again.'
+                : 'Its request becomes the next step of the run.'),
+            'csrf'         => $visitor->session()->csrf,
+            'notice'       => is_string($flash['message'] ?? null) && $flash['message'] !== '' ? $flash['message'] : null,
+            'exchanges'    => $exchanges,
+            'wide'         => true,
+        ], visitor: $visitor)->withNoStore(), $visitor);
+    }
+
+    /** @param array<string, string> $params */
+    public function rerun(Request $request, array $params = []): Response
+    {
+        $visitor = $this->guard->visitor($request);
+        $this->guard->requireCsrf($visitor, $request);
+
+        $run = $this->run($params);
+
+        if (!$this->isOwner($request, $visitor, $run)) {
+            throw HttpException::forbidden('Only the person who started this run can run its tests again.');
+        }
+
+        $test    = $this->serverTest($params);
+        $result  = $this->results->forRun($run->id)[$test->id] ?? null;
+        $testUrl = '/runs/' . $run->publicId . '/tests/' . $test->id;
+        $reason  = $this->runner->rerunReason($run, $test->id, $result);
+
+        if ($reason !== null) {
+            return $this->guard->commit(Response::seeOther($testUrl), $this->guard->flash($visitor, ['message' => $reason]));
+        }
+
+        $automatic = in_array($result['step'], ServerRunner::AUTOMATIC_STEPS, true);
+
+        // Automatic checks fetch from the server under test straight away, like starting a run does.
+        if ($automatic && $this->limiter->hit(self::RERUN_BUCKET, $request->ip, self::START_WINDOW) > self::RERUN_LIMIT) {
+            throw new HttpException(429, 'Too many checks were run again from your address. Try again in a few minutes.');
+        }
+
+        $message = $this->runner->rerun($run, $test->id);
+        $run     = $this->runs->find($run->id) ?? $run;
+
+        // A browser check asked for by name starts straight away, unless another step is in progress.
+        if (!$automatic && $this->runner->currentAction($run) === null && $this->runner->next($run)->step === $test->id) {
+            $message = 'Running ' . $test->id . ' again.';
+        }
+
+        return $this->guard->commit(
+            Response::seeOther($automatic ? $testUrl : $this->afterStepUrl($run)),
+            $this->guard->flash($visitor, ['message' => $message]),
+        );
     }
 
     /**
@@ -226,7 +356,7 @@ final class ServerRunController extends Controller
             throw HttpException::notFound();
         }
 
-        $this->exchanges->recordInbound($run->id, 'landing', $request);
+        $exchangeId = $this->exchanges->recordInbound($run->id, 'landing', $request);
 
         $visitor = $this->guard->begin($request);
 
@@ -243,16 +373,62 @@ final class ServerRunController extends Controller
         $url    = $this->config->url(ltrim($request->path, '/')) . ($request->queryString ? '?' . $request->queryString : '');
         $result = $this->runner->land($run, $url);
 
+        if ($result['step'] !== null) {
+            $this->exchanges->setStep($exchangeId, $result['step']);
+        }
+
         if ($result['tester'] !== null) {
             $visitor = $this->guard->logIn($visitor, $result['tester']);
         }
 
         $visitor = $this->guard->flash($visitor, ['message' => $result['message']]);
 
-        return $this->guard->commit(Response::seeOther('/runs/' . $run->publicId), $visitor);
+        return $this->guard->commit(Response::seeOther($this->afterStepUrl($run)), $visitor);
     }
 
     // ================================================================= helpers
+
+    /** Back to the step while it still needs something, otherwise to the list of tests. */
+    private function afterStepUrl(Run $run): string
+    {
+        $run = $this->runs->find($run->id) ?? $run;
+
+        return '/runs/' . $run->publicId . ($this->runner->currentAction($run) !== null ? '/step' : '');
+    }
+
+    /** How a step that has just finished came out, or null while it still needs something. */
+    private function finishedNotice(Run $run, Action $action): ?string
+    {
+        if ($this->runner->currentAction($run) !== null) {
+            return null;
+        }
+
+        $results = $this->results->forRun($run->id);
+        $labels  = [];
+
+        foreach ($action->tests as $id) {
+            if (isset($results[$id])) {
+                $labels[] = Outcome::tryFrom((string) $results[$id]['outcome'])?->label() ?? '';
+            }
+        }
+
+        $labels = array_values(array_filter($labels));
+
+        if ($labels === []) {
+            return 'Finished ' . $action->title . '.';
+        }
+
+        if (count($action->tests) === 1) {
+            return sprintf('Finished %s. Result: %s.', $action->title, $labels[0]);
+        }
+
+        $counts = [];
+        foreach (array_count_values($labels) as $label => $n) {
+            $counts[] = $n . ' ' . strtolower((string) $label) . ($label === 'Warning' && $n !== 1 ? 's' : '');
+        }
+
+        return sprintf('Finished %s. Results: %s.', $action->title, implode(', ', $counts));
+    }
 
     /** @param array<string, string> $params */
     private function run(array $params): Run
@@ -261,6 +437,14 @@ final class ServerRunController extends Controller
 
         return (preg_match('/^[0-9A-Z]{26}$/', $id) === 1 ? $this->runs->findByPublicId($id) : null)
             ?? throw HttpException::notFound();
+    }
+
+    /** @param array<string, string> $params */
+    private function serverTest(array $params): TestDefinition
+    {
+        $test = Catalog::find(strtoupper($params['test'] ?? ''));
+
+        return $test !== null && $test->suite === Catalog::SERVER ? $test : throw HttpException::notFound();
     }
 
     private function isOwner(Request $request, Visitor $visitor, Run $run): bool
@@ -276,8 +460,8 @@ final class ServerRunController extends Controller
     }
 
     /**
-     * @param array<string, string> $params
-     * @param callable(Run): mixed   $work
+     * @param array<string, string>  $params
+     * @param callable(Run): ?string $work Returns a notice to show, if any.
      */
     private function ownerAction(Request $request, array $params, callable $work): Response
     {
@@ -290,9 +474,13 @@ final class ServerRunController extends Controller
             throw HttpException::forbidden('Only the person who started this run can continue it.');
         }
 
-        $work($run);
+        $notice = $work($run);
 
-        return Response::seeOther('/runs/' . $run->publicId);
+        if ($notice !== null) {
+            $visitor = $this->guard->flash($visitor, ['message' => $notice]);
+        }
+
+        return $this->guard->commit(Response::seeOther($this->afterStepUrl($run)), $visitor);
     }
 
     private static function ownerCookie(Run $run): string

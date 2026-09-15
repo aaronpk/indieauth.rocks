@@ -41,12 +41,16 @@ final class AltController extends Controller
             throw HttpException::notFound();
         }
 
-        $this->exchanges->recordInbound($run->id, 'landing', $request);
+        $exchangeId = $this->exchanges->recordInbound($run->id, 'landing', $request);
 
         $url    = $this->config->altUrl(ltrim($request->path, '/')) . ($request->queryString ? '?' . $request->queryString : '');
         // No cookies reach this origin, so the landing cannot be tied to the
         // run's browser: it only counts if it carries the attempt's state.
         $result = $this->runner->land($run, $url, trusted: false);
+
+        if ($result['step'] !== null) {
+            $this->exchanges->setStep($exchangeId, $result['step']);
+        }
         $caught = str_starts_with(ltrim($request->path, '/'), 'catch/') || substr_count(trim($request->path, '/'), '/') >= 2;
 
         return $this->page('landing', $caught ? 'Unregistered redirect' : 'Back to your test run', [

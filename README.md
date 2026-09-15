@@ -38,7 +38,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 
 **Starting a run**
 - Enter your profile URL on the home page. Discovery and endpoint checks run immediately.
-- The run page then walks through the steps that need you:
+- The run page lists every test and names the step that's up next. **Start test** shows that step's instructions; when it's done you're back at the list, with a note saying how it went. Any test's page in the run can also run a browser check or the automatic checks again. The steps that need you:
   - **Sign in with your server.** This also signs you in here.
   - **About 14 quick "browser checks".** These are deliberately wrong requests that your server should refuse. You cancel, or report the error you saw.
   - **A few more approvals.** Each one yields a code that is presented incorrectly and then correctly.

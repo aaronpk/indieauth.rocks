@@ -32,6 +32,8 @@
                         <input type="hidden" name="_csrf" value="<?= $nav_csrf ?>">
                         <button type="submit" class="link-button">Sign out</button>
                     </form>
+                <?php } else { ?>
+                    <a href="<?= $home_url ?>sign-in">Sign in</a>
                 <?php } ?>
             </nav>
         </div>

@@ -45,7 +45,7 @@
         <?php if ($nav_user !== null) { ?>
             <p><a class="button" href="/client-runs">Go to client tests</a></p>
         <?php } else { ?>
-            <p class="muted small">Sign in first by starting a server test with any IndieAuth server you use.</p>
+            <p><a class="button" href="/sign-in">Sign in to test a client</a></p>
         <?php } ?>
         <p class="small"><a href="/client-tests">See all client tests</a></p>
     </div>

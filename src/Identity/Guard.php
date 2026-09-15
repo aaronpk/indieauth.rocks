@@ -94,15 +94,23 @@ final class Guard
         return new Visitor($visitor->session->withFlash($data), $visitor->user);
     }
 
-    /** @return array<string, mixed> */
-    public function takeFlash(Visitor $visitor): array
+    /**
+     * Read the flash and clear it.
+     *
+     * The visitor is replaced with one whose session has no flash, so a later
+     * commit() cannot save the old session, flash and all, back again.
+     *
+     * @return array<string, mixed>
+     */
+    public function takeFlash(Visitor &$visitor): array
     {
         if ($visitor->session === null || $visitor->session->flash === []) {
             return [];
         }
 
-        $flash = $visitor->session->flash;
-        $this->sessions->save($visitor->session->withFlash([]));
+        $flash   = $visitor->session->flash;
+        $visitor = new Visitor($visitor->session->withFlash([]), $visitor->user);
+        $this->sessions->save($visitor->session);
 
         return $flash;
     }

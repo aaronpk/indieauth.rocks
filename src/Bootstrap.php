@@ -19,6 +19,7 @@ use IndieAuthRocks\Controllers\TestServerController;
 use IndieAuthRocks\Controllers\ServerRunController;
 use IndieAuthRocks\Controllers\ClientDocsController;
 use IndieAuthRocks\Controllers\HomeController;
+use IndieAuthRocks\Controllers\SignInController;
 use IndieAuthRocks\Engine\TokenVault;
 use IndieAuthRocks\Fetch\HttpClient;
 use IndieAuthRocks\Fetch\RecordingHttpClient;
@@ -147,6 +148,16 @@ final class Bootstrap
             $c->get(RunRepository::class),
         ));
 
+        $container->set(SignInController::class, static fn (Container $c): SignInController => new SignInController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(HttpClient::class),
+            $c->get(RedisStore::class),
+            $c->get(TesterRepository::class),
+            $c->get(RateLimiter::class),
+        ));
+
         $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
 
         $container->set(ReportRepository::class, static fn (Container $c): ReportRepository => new ReportRepository($c->get(Database::class)));
@@ -210,17 +221,26 @@ final class Bootstrap
         $router->get('/client-tests', [CatalogController::class, 'clientTests']);
         $router->get('/tests/{id}', [CatalogController::class, 'test']);
 
+        // Signing in without testing a server
+        $router->get('/sign-in', [SignInController::class, 'form']);
+        $router->post('/sign-in', [SignInController::class, 'start']);
+        $router->get('/sign-in/callback', [SignInController::class, 'callback']);
+        $router->get('/sign-in/client', [SignInController::class, 'client']);
+
         $router->get('/account', [AccountController::class, 'show']);
         $router->post('/logout', [AccountController::class, 'logout']);
 
         // Server test runs
         $router->post('/server-runs', [ServerRunController::class, 'start']);
         $router->get('/runs/{run}', [ServerRunController::class, 'show']);
+        $router->post('/runs/{run}/start', [ServerRunController::class, 'startStep']);
+        $router->get('/runs/{run}/step', [ServerRunController::class, 'step']);
         $router->get('/runs/{run}/go/{attempt}', [ServerRunController::class, 'go']);
         $router->post('/runs/{run}/answer', [ServerRunController::class, 'answer']);
         $router->post('/runs/{run}/skip', [ServerRunController::class, 'skip']);
         $router->post('/runs/{run}/resume', [ServerRunController::class, 'resume']);
         $router->get('/runs/{run}/tests/{test}', [ServerRunController::class, 'transcript']);
+        $router->post('/runs/{run}/tests/{test}/rerun', [ServerRunController::class, 'rerun']);
 
         // The client this site plays: its redirect URI and client_id documents.
         $router->get('/callback/{key}', [ServerRunController::class, 'callback']);

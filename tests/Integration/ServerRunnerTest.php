@@ -158,4 +158,146 @@ final class ServerRunnerTest extends AppTestCase
             $this->assertNotSame([], ProbeGrader::question($id, 'alt.example')->choices, $id);
         }
     }
+
+    /** Take a new run through its steps, answering as a careful person would, until the given step is next. */
+    private function advanceTo(FakeIndieAuthServer $server, Run $run, string $step): Action
+    {
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+
+        for ($i = 0; $i < 20; $i++) {
+            $action = $runner->next($runs->find($run->id));
+
+            if ($action->step === $step) {
+                return $action;
+            }
+
+            if ($action->type === Action::ASK) {
+                $runner->answer($runs->find($run->id), $action->question->key, 'both');
+            } else {
+                $runner->land($runs->find($run->id), (string) $server->authorize((string) $action->url, (string) $action->intent));
+            }
+        }
+
+        $this->fail('Never reached ' . $step . '.');
+    }
+
+    public function test_looking_at_what_is_next_starts_nothing(): void
+    {
+        $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+        $run    = $runner->start(FakeIndieAuthServer::ME, 'browser');
+
+        $upcoming = $runner->upcoming($runs->find($run->id));
+        $this->assertSame('login', $upcoming['step']);
+        $this->assertFalse($upcoming['in_progress']);
+        $this->assertContains('S301', $upcoming['tests']);
+        $this->assertNull($runner->currentAction($runs->find($run->id)));
+        $this->assertSame([], $runs->find($run->id)->state['attempts']);
+
+        $runner->next($runs->find($run->id));
+
+        $this->assertTrue($runner->upcoming($runs->find($run->id))['in_progress']);
+        $this->assertSame('login', $runner->currentAction($runs->find($run->id))?->step);
+    }
+
+    public function test_every_redirect_back_is_described(): void
+    {
+        $server = $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+        $run    = $runner->start(FakeIndieAuthServer::ME, 'browser');
+
+        $action = $this->advanceTo($server, $run, 'S207');
+        $result = $runner->land($runs->find($run->id), (string) $server->authorize((string) $action->url, 'cancel'));
+
+        $this->assertSame('S207', $result['step']);
+        $this->assertStringContainsString('Your server redirected back with error=access_denied for S207', $result['message']);
+        $this->assertStringNotContainsString('approval screen', $result['message']);
+    }
+
+    public function test_a_quick_redirect_with_a_code_suggests_there_was_no_approval_screen(): void
+    {
+        $server = $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+        $run    = $runner->start(FakeIndieAuthServer::ME, 'browser');
+
+        // A server that remembers the sign-in approval sends S207 straight back with a code.
+        $action = $this->advanceTo($server, $run, 'S207');
+        $runner->markOpened($runs->find($run->id), (string) $action->attemptId);
+        $result = $runner->land($runs->find($run->id), (string) $server->authorize((string) $action->url, 'approve'));
+
+        $this->assertStringContainsString('redirected back with an authorization code for S207', $result['message']);
+        $this->assertStringContainsString('without showing an approval screen', $result['message']);
+        $this->assertStringContainsString('revoke that approval', $result['message']);
+        $this->assertSame('S207', $runs->find($run->id)->state['queue'][0]);
+    }
+
+    public function test_a_browser_check_can_run_again_after_the_run_finished(): void
+    {
+        $runner  = $this->container->get(ServerRunner::class);
+        $runs    = $this->container->get(RunRepository::class);
+        $results = $this->container->get(ResultRepository::class);
+        $run     = $this->drive($this->server('noPkceCheck'));
+
+        $this->assertSame(Run::COMPLETE, $run->status);
+        $this->assertContains($this->outcomes($run)['S216'] ?? 'missing', ['fail', 'warning']);
+        $this->assertNull($runner->rerunReason($run, 'S216', $results->forRun($run->id)['S216']));
+
+        // The server is fixed, and the check is run again.
+        $fixed = $this->server();
+        $this->assertSame('S216 is now the next step.', $runner->rerun($run, 'S216'));
+
+        $run    = $runs->find($run->id);
+        $action = $runner->next($run);
+        $this->assertSame(Run::RUNNING, $run->status);
+        $this->assertSame(Action::NAVIGATE, $action->type);
+        $this->assertSame('S216', $action->step);
+
+        $landed = $runner->land($runs->find($run->id), (string) $fixed->authorize((string) $action->url, 'cancel'));
+        $this->assertTrue($landed['handled'], $landed['message']);
+
+        $this->assertSame(Action::FINISHED, $runner->next($runs->find($run->id))->type);
+        $this->assertSame(Run::COMPLETE, $runs->find($run->id)->status);
+        $this->assertSame('pass', $this->outcomes($run)['S216']);
+    }
+
+    public function test_running_a_check_again_sets_aside_the_request_that_was_next(): void
+    {
+        $server = $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+        $run    = $runner->start(FakeIndieAuthServer::ME, 'browser');
+
+        $pending = $this->advanceTo($server, $run, 'S208');
+
+        $this->assertSame('S207 is now the next step.', $runner->rerun($runs->find($run->id), 'S207'));
+        $this->assertSame(['S207', 'S208'], array_slice($runs->find($run->id)->state['queue'], 0, 2));
+        $this->assertSame('S207', $runner->next($runs->find($run->id))->step);
+
+        // If the browser still comes back from the request that was set aside, it is not graded.
+        $late = $runner->land($runs->find($run->id), self::BASE . 'callback/' . $run->runKey . '?error=access_denied&state=' . rawurlencode($pending->attemptId . '~x'));
+        $this->assertFalse($late['handled']);
+    }
+
+    public function test_only_browser_checks_and_automatic_checks_run_again_on_their_own(): void
+    {
+        $runner    = $this->container->get(ServerRunner::class);
+        $exchanges = $this->container->get(\IndieAuthRocks\Storage\ExchangeRepository::class);
+        $run       = $this->drive($this->server());
+        $results   = $this->container->get(ResultRepository::class)->forRun($run->id);
+
+        $this->assertSame('discovery', $results['S101']['step']);
+        $this->assertNull($runner->rerunReason($run, 'S101', $results['S101']));
+        $this->assertStringContainsString('every redirect', (string) $runner->rerunReason($run, 'S201', $results['S201']));
+        $this->assertStringContainsString('Start a new run', (string) $runner->rerunReason($run, 'S301', $results['S301']));
+        $this->assertSame('This test has not run yet.', $runner->rerunReason($run, 'S304', null));
+
+        $before = count($exchanges->forStep($run->id, 'discovery'));
+        $this->assertSame('The discovery and endpoint checks ran again.', $runner->rerun($run, 'S101'));
+        $this->assertGreaterThan($before, count($exchanges->forStep($run->id, 'discovery')));
+        $this->assertSame(Run::COMPLETE, $this->container->get(RunRepository::class)->find($run->id)->status);
+    }
 }

@@ -47,6 +47,8 @@ final class CatalogController extends Controller
 
     private function list(Request $request, string $suite, string $title, string $intro): Response
     {
+        // A run can be started from the list, which needs a session for the form's CSRF token.
+        $visitor  = $this->guard->begin($request);
         $sections = [];
         foreach (Catalog::sections($suite) as $name => $tests) {
             $sections[] = [
@@ -55,12 +57,15 @@ final class CatalogController extends Controller
             ];
         }
 
-        return $this->page('catalog/list', $title, [
-            'heading'  => $title,
-            'intro'    => $intro,
-            'sections' => $sections,
-            'count'    => count(Catalog::suite($suite)),
-            'wide'     => true,
-        ], visitor: $this->guard->visitor($request));
+        return $this->guard->commit($this->page('catalog/list', $title, [
+            'heading'   => $title,
+            'intro'     => $intro,
+            'suite'     => $suite,
+            'signed_in' => $visitor->isAuthenticated(),
+            'csrf'      => $visitor->session()->csrf,
+            'sections'  => $sections,
+            'count'     => count(Catalog::suite($suite)),
+            'wide'      => true,
+        ], visitor: $visitor), $visitor);
     }
 }

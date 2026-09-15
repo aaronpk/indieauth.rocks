@@ -56,6 +56,15 @@ final class ServerRunner
 
     private const STEPS_WITHOUT_RECORDED_SKIP = ['c2b', 'c3b', 'c4', 'c5', 'c8'];
 
+    /** Steps whose checks need no browser, so they can run again at any time. */
+    public const AUTOMATIC_STEPS = ['discovery', 'probes'];
+
+    /** Tests checked on every landing, keeping the worst outcome, so one more landing cannot clear them. */
+    private const STICKY_TESTS = ['S201', 'S202', 'S905'];
+
+    /** A code back this soon after the browser left most likely means no approval screen was shown. */
+    private const FAST_REDIRECT_SECONDS = 3;
+
     /** Steps that are only needed when a code stops working after a failed redemption. */
     private const IF_TOKEN_ENDPOINT_BURNS = ['c2b'];
     private const IF_AUTHORIZATION_BURNS  = ['c3b', 'c4', 'c5', 'c8'];
@@ -93,6 +102,30 @@ final class ServerRunner
             'sticky'      => [],
         ];
 
+        $this->runAutomaticChecks($run, $state);
+
+        if ($state['endpoints']['authorization'] !== null) {
+            $state['queue'] = ['login', ...ProbeGrader::ALL, 'c2', 'c2b', 'c3', 'c3b'];
+
+            if ($extended) {
+                array_push($state['queue'], 'c4', 'c5', 'c8', 'c6', 'S322', 'introspection');
+            }
+
+            if ($slow) {
+                $state['queue'][] = 'S304';
+            }
+        }
+
+        $this->runs->save($run, $state);
+
+        return $run;
+    }
+
+    /** Discovery and the endpoint checks, which need nobody's help. */
+    private function runAutomaticChecks(Run $run, array &$state): void
+    {
+        $profile = (string) $state['profile_url'];
+
         $this->http->context($run->id, 'discovery');
         $discovery = (new Discovery($this->http))->discover($profile);
         $this->recordAll($run, DiscoveryChecks::grade($discovery), 'discovery');
@@ -111,22 +144,7 @@ final class ServerRunner
         $this->http->context($run->id, 'probes');
         $this->recordAll($run, (new EndpointProbes($this->client))->run($state['endpoints'], $this->urls($run)), 'probes');
 
-        if ($state['endpoints']['authorization'] !== null) {
-            $state['queue'] = ['login', ...ProbeGrader::ALL, 'c2', 'c2b', 'c3', 'c3b'];
-
-            if ($extended) {
-                array_push($state['queue'], 'c4', 'c5', 'c8', 'c6', 'S322', 'introspection');
-            }
-
-            if ($slow) {
-                $state['queue'][] = 'S304';
-            }
-        }
-
         $this->http->context(null);
-        $this->runs->save($run, $state);
-
-        return $run;
     }
 
     // ==================================================================== next
@@ -180,19 +198,59 @@ final class ServerRunner
         return new Action(Action::FINISHED);
     }
 
+    /**
+     * The step the run is on, or the one it will start next, without
+     * starting anything.
+     *
+     * @return array{step: string, title: string, tests: list<string>, in_progress: bool}|null Null when no step is left to run.
+     */
+    public function upcoming(Run $run): ?array
+    {
+        if ($run->isFinished()) {
+            return null;
+        }
+
+        $state = $run->state;
+        $step  = $state['current']['step'] ?? null;
+
+        if ($step === null) {
+            foreach ($state['queue'] as $queued) {
+                if ($this->skipReason($state, $queued) === null) {
+                    $step = $queued;
+                    break;
+                }
+            }
+        }
+
+        return $step === null ? null : [
+            'step'        => (string) $step,
+            'title'       => $this->title((string) $step),
+            'tests'       => $this->testsFor((string) $step),
+            'in_progress' => ($state['current'] ?? null) !== null,
+        ];
+    }
+
+    /** What the step in progress needs, or null when no step has been started. */
+    public function currentAction(Run $run): ?Action
+    {
+        $current = $run->state['current'] ?? null;
+
+        return $current === null || $run->isFinished() ? null : $this->actionFor($run, $current);
+    }
+
     // ==================================================================== land
 
     /**
      * The browser came back from the server under test.
      *
-     * @return array{handled: bool, message: string, tester: ?Tester}
+     * @return array{handled: bool, message: string, tester: ?Tester, step: ?string}
      */
     public function land(Run $run, string $url, bool $trusted = true): array
     {
         $landing = Landing::parse($this->config, $url);
 
         if ($landing === null || $landing->runKey !== $run->runKey) {
-            return ['handled' => false, 'message' => 'This address is not part of this test run.', 'tester' => null];
+            return ['handled' => false, 'message' => 'This address is not part of this test run.', 'tester' => null, 'step' => null];
         }
 
         $state   = $run->state;
@@ -208,15 +266,16 @@ final class ServerRunner
         }
 
         if ($attemptId === null || !isset($state['attempts'][$attemptId])) {
-            return ['handled' => false, 'message' => 'No test is waiting for this redirect.', 'tester' => null];
+            return ['handled' => false, 'message' => 'No test is waiting for this redirect.', 'tester' => null, 'step' => null];
         }
 
         if (isset($state['completed'][$attemptId])) {
-            return ['handled' => false, 'message' => 'This redirect was already recorded.', 'tester' => null];
+            return ['handled' => false, 'message' => 'This redirect was already recorded.', 'tester' => null, 'step' => null];
         }
 
-        $attempt = AuthorizationAttempt::fromArray($state['attempts'][$attemptId], $this->vault->get($run, 'verifier:' . $attemptId));
-        $step    = $attempt->step;
+        $attempt  = AuthorizationAttempt::fromArray($state['attempts'][$attemptId], $this->vault->get($run, 'verifier:' . $attemptId));
+        $step     = $attempt->step;
+        $openedAt = $state['attempts'][$attemptId]['opened_at'] ?? null;
 
         $state['completed'][$attemptId] = true;
         if (($current['attempt'] ?? null) === $attemptId) {
@@ -232,7 +291,7 @@ final class ServerRunner
 
             $this->runs->save($run, $state);
 
-            return ['handled' => true, 'message' => 'This step was left waiting so long that its saved PKCE verifier expired, so it will run again.', 'tester' => null];
+            return ['handled' => true, 'message' => 'This step was left waiting so long that its saved PKCE verifier expired, so it will run again.', 'tester' => null, 'step' => $step];
         }
 
         $this->http->context($run->id, $step);
@@ -277,7 +336,126 @@ final class ServerRunner
         $this->http->context(null);
         $this->runs->save($run, $state);
 
-        return ['handled' => true, 'message' => $message, 'tester' => $tester];
+        return ['handled' => true, 'message' => $this->landingMessage($attempt, $landing, is_int($openedAt) ? $openedAt : null, $message), 'tester' => $tester, 'step' => $step];
+    }
+
+    /** Note when the browser was sent to the server, to spot a redirect that came back without anyone clicking. */
+    public function markOpened(Run $run, string $attemptId): void
+    {
+        $state = $run->state;
+
+        if (!isset($state['attempts'][$attemptId])) {
+            return;
+        }
+
+        $state['attempts'][$attemptId]['opened_at'] = time();
+        $this->runs->save($run, $state);
+    }
+
+    /**
+     * Say that the browser came back and with what. A server that redirects
+     * straight back leaves nothing on screen to show it happened, so this is
+     * always said, followed by whatever the step handler had to add.
+     */
+    private function landingMessage(AuthorizationAttempt $attempt, Landing $landing, ?int $openedAt, string $message): string
+    {
+        $step  = $attempt->step;
+        $label = in_array($step, ProbeGrader::ALL, true)
+            ? $step . ' (' . (Catalog::find($step)?->title ?? '') . ')'
+            : 'this step (' . $this->title($step) . ')';
+
+        $parts = [sprintf('Your server redirected back %s for %s.', $landing->describe(), $label), $message];
+
+        $elapsed = $openedAt === null ? null : max(0, time() - $openedAt);
+
+        if ($elapsed !== null && $elapsed <= self::FAST_REDIRECT_SECONDS && $landing->code() !== null && $attempt->intent === AuthorizationAttempt::CANCEL) {
+            $parts[] = sprintf(
+                'It came back %s after you opened the request, so your server probably approved it without showing an approval screen.',
+                $elapsed < 1 ? 'less than a second' : ($elapsed === 1 ? '1 second' : $elapsed . ' seconds'),
+            );
+            $parts[] = $step === 'S207'
+                ? 'If it remembers approving this site, revoke that approval in your server so you can cancel this request, or skip this step.'
+                : 'Check that it only skips the approval screen when the whole request matches an earlier approval, redirect URI included, and not just the client_id.';
+        }
+
+        return implode(' ', array_filter($parts, static fn (string $part): bool => $part !== ''));
+    }
+
+    // =================================================================== rerun
+
+    /**
+     * Why a test cannot be run again on its own, or null if it can.
+     *
+     * @param array<string, mixed>|null $result The test's row from ResultRepository::forRun().
+     */
+    public function rerunReason(Run $run, string $testId, ?array $result): ?string
+    {
+        $step = $result['step'] ?? null;
+
+        return match (true) {
+            $run->status === Run::ABANDONED                => 'This run was abandoned. Start a new run to test your server again.',
+            in_array($testId, self::STICKY_TESTS, true)    => 'This is checked on every redirect back from your server, keeping the worst result. Start a new run to check it again.',
+            $step === null                                 => 'This test has not run yet.',
+            in_array($step, self::AUTOMATIC_STEPS, true)   => null,
+            in_array($testId, ProbeGrader::ALL, true) && $step === $testId
+                                                           => $this->skipReason($run->state, $testId),
+            default                                        => sprintf('This is checked together with other tests during this step: %s. Start a new run to check it again.', $this->title((string) $step)),
+        };
+    }
+
+    /**
+     * Run one test again. Automatic checks run on the spot; a browser check
+     * becomes the next step, reopening the run if it had finished.
+     *
+     * @return string A notice for the person.
+     */
+    public function rerun(Run $run, string $testId): string
+    {
+        $result = $this->results->forRun($run->id)[$testId] ?? null;
+        $reason = $this->rerunReason($run, $testId, $result);
+
+        if ($reason !== null) {
+            throw new \LogicException($testId . ' cannot run again: ' . $reason);
+        }
+
+        $state = $run->state;
+
+        if (in_array($result['step'], self::AUTOMATIC_STEPS, true)) {
+            $this->runAutomaticChecks($run, $state);
+            $this->runs->save($run, $state);
+
+            return 'The discovery and endpoint checks ran again.';
+        }
+
+        // finish() revoked the tokens and cleared the vault. Browser checks
+        // need neither: a fresh attempt stores its own verifier, and next()
+        // finishes the run again once the queue is empty.
+        $status         = $run->isFinished() ? Run::RUNNING : null;
+        $current        = $state['current'] ?? null;
+        $state['queue'] = array_values(array_filter($state['queue'], static fn (string $step): bool => $step !== $testId));
+
+        if (($current['step'] ?? null) === $testId) {
+            $this->runs->save($run, $state, $status);
+
+            return $testId . ' is already the next step.';
+        }
+
+        $message = $testId . ' is now the next step.';
+
+        if ($current !== null && $current['awaiting'] === 'landing') {
+            // The request that was next goes back in line. If the browser
+            // still comes back from it, that redirect is ignored.
+            $state['completed'][$current['attempt']] = true;
+            array_unshift($state['queue'], $current['step']);
+            $state['current'] = null;
+        } elseif ($current !== null) {
+            $message = $testId . ' will run after the step in progress.';
+        }
+
+        array_unshift($state['queue'], $testId);
+        $this->runs->save($run, $state, $status);
+
+        return $message;
     }
 
     // ================================================================== answer

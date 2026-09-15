@@ -57,6 +57,12 @@ final class ExchangeRepository
         ]);
     }
 
+    /** File a request under the step it turned out to belong to, once that is known. */
+    public function setStep(int $exchangeId, string $step): void
+    {
+        $this->db->execute('UPDATE exchanges SET step = ? WHERE id = ?', [$step, $exchangeId]);
+    }
+
     /** @return list<array<string, mixed>> */
     public function forStep(int $runId, string $step): array
     {

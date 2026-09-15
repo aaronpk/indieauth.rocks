@@ -46,12 +46,7 @@ final class ClientRunController extends Controller
         $visitor = $this->guard->begin($request);
 
         if (!$visitor->isAuthenticated()) {
-            return $this->guard->commit($this->page('message', 'Sign in to test a client', [
-                'heading'    => 'Sign in first',
-                'message'    => 'Client test runs belong to a signed-in tester. Sign in by starting a server test with any IndieAuth server you use; the first step signs you in here.',
-                'link'       => '/',
-                'link_label' => 'Go to the home page',
-            ], visitor: $visitor), $visitor);
+            return $this->guard->commit(Response::seeOther('/sign-in?next=%2Fclient-runs'), $visitor);
         }
 
         $runs = array_values(array_filter(

@@ -29,7 +29,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 | 100s | Discovery and the metadata document |
 | 200s | Authorization requests and responses: `state`, `iss`, client information, redirect URI checks, PKCE |
 | 300s | Code redemption: single use, wrong verifier/client/redirect URI, redemption at the authorization endpoint |
-| 400s | Token responses |
+| 400s | Token responses, including JWT access tokens (RFC 9068) and the keys at `jwks_uri` |
 | 500s | Refresh tokens: rotation, reuse detection, scope |
 | 600s | Revocation |
 | 700s | Userinfo |
@@ -45,7 +45,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 - **Approvals needed:**
   - A correct server needs three.
   - Servers that stop accepting a code after a failed attempt, or that revoke tokens when a code is replayed, need one or two more. They're asked for only when needed.
-- **Extended and slow tests** (isolated redemption checks, introspection with your own credential, an 11-minute code expiry) are opt-in.
+- **Extended and slow tests** (isolated redemption checks, introspection, an 11-minute code expiry) are opt-in. For introspection you paste the credential your resource servers use, and say which scope that server accepts (`create` for a Micropub endpoint, say), since some servers issue a token per resource server.
 
 **Cross-origin checks**
 - Tests like S208 use a second hostname, `ALT_BASE_URL`, so the suite can see if a server sends someone to an unregistered redirect URI.

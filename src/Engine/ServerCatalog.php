@@ -245,6 +245,18 @@ final class ServerCatalog
         $add('S410', self::TOKENS, 'Access tokens are hard to guess', Level::SHOULD, Mode::AUTO, 'RFC 6749 §10.10',
             'Checks the length of the access token.',
             'The token is at least 22 characters.', ['S402']);
+        $add('S420', self::TOKENS, 'Access token format', Level::INFO, Mode::AUTO, 'RFC 9068',
+            'Looks at whether your access tokens are JWTs or opaque strings. Both are fine; the checks below only apply to JWTs.',
+            'Informational.', ['S402']);
+        $add('S421', self::TOKENS, 'JWT header marks it an access token', Level::SHOULD, Mode::AUTO, 'RFC 9068 §2.1',
+            'When the access token is a JWT, checks its header.',
+            'typ is "at+jwt", so it cannot be confused with an ID token, and alg is a real signing algorithm.', ['S420']);
+        $add('S422', self::TOKENS, 'JWT verifies against the published keys', Level::MUST, Mode::AUTO, 'RFC 9068 §4, RFC 8414 §2',
+            'Fetches jwks_uri from your metadata and checks the token\'s signature with the key naming its kid, as a resource server would.',
+            'The metadata lists jwks_uri, it returns a JWKS, and the signature verifies.', ['S420']);
+        $add('S423', self::TOKENS, 'JWT claims are complete', Level::MUST, Mode::AUTO, 'RFC 9068 §2.2',
+            'Checks the claims a resource server needs.',
+            'iss, aud, exp, iat and sub are present, iss matches the issuer, exp is in the future, and client_id and scope match the token response.', ['S420']);
 
         // ------------------------------------------------------------ 500s
 
@@ -300,7 +312,7 @@ final class ServerCatalog
             'Checks the body of the unauthenticated introspection response.',
             'The response does not include active: true or the me value.', ['S801']);
         $add('S803', self::INTROSPECTION, 'Describes an active token', Level::MUST, Mode::MANUAL, '§6.2',
-            'If you paste the credential your resource servers use, introspects your access token with it.',
+            'If you paste the credential your resource servers use, and say which scope that server accepts, introspects a token with that scope.',
             'Returns active: true, me and client_id. Skipped if you do not provide a credential.', ['S108', 'S402'], true);
         $add('S804', self::INTROSPECTION, 'Describes an invalid token', Level::MUST, Mode::MANUAL, '§6.2',
             'With the same credential, introspects a made-up token.',

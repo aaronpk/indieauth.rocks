@@ -24,7 +24,7 @@ use Throwable;
  */
 final class RunServerCommand
 {
-    private const OPTIONS = ['driver', 'driver-config', 'ca-file', 'credential', 'extended', 'slow', 'json'];
+    private const OPTIONS = ['driver', 'driver-config', 'ca-file', 'credential', 'introspection-scope', 'extended', 'slow', 'json'];
 
     public function __construct(
         private readonly Output $out,
@@ -38,7 +38,7 @@ final class RunServerCommand
         $unknown = $args->unknownOptions(self::OPTIONS);
 
         if ($profile === null || $unknown !== []) {
-            $this->out->error('Usage: run-server <profile-url> [--driver=myindieauth] [--driver-config=path] [--ca-file=path] [--credential=secret] [--extended] [--slow] [--json]');
+            $this->out->error('Usage: run-server <profile-url> [--driver=myindieauth] [--driver-config=path] [--ca-file=path] [--credential=secret] [--introspection-scope=create] [--extended] [--slow] [--json]');
 
             return 1;
         }
@@ -175,7 +175,8 @@ final class RunServerCommand
             $file->authenticator(),
             (string) $file->get('base'),
             $file,
-        ))->withIntrospectionCredential($args->option('credential'));
+        ))->withIntrospectionCredential($args->option('credential'))
+            ->withIntrospectionScope($args->option('introspection-scope'));
     }
 
     private function progress(bool $json, string $line): void

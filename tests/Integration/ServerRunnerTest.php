@@ -50,7 +50,11 @@ final class ServerRunnerTest extends AppTestCase
             }
 
             if ($action->type === Action::ASK) {
-                $runner->answer($run, $action->question->key, $action->question->key === 'credential' ? 'cred' : 'both', 'driver');
+                $runner->answer($run, $action->question->key, match ($action->question->key) {
+                    'credential'          => 'cred',
+                    'introspection-scope' => 'profile',
+                    default               => 'both',
+                }, 'driver');
                 continue;
             }
 
@@ -106,6 +110,27 @@ final class ServerRunnerTest extends AppTestCase
         }
     }
 
+    public function test_jwt_access_tokens_are_checked_against_the_published_keys(): void
+    {
+        $outcomes = $this->outcomes($this->drive($this->server('jwtTokens')));
+
+        foreach (['S420', 'S421', 'S422', 'S423'] as $id) {
+            $this->assertSame('pass', $outcomes[$id] ?? 'missing', $id);
+        }
+    }
+
+    public function test_opaque_access_tokens_skip_the_jwt_checks(): void
+    {
+        $outcomes = $this->outcomes($this->drive($this->server()));
+
+        // Opaque tokens are fine: only the format is reported.
+        $this->assertSame('pass', $outcomes['S420'] ?? 'missing');
+
+        foreach (['S421', 'S422', 'S423'] as $id) {
+            $this->assertSame('skipped', $outcomes[$id] ?? 'missing', $id);
+        }
+    }
+
     /** @return iterable<string, array{0: string, 1: list<string>}> */
     public static function defects(): iterable
     {
@@ -121,6 +146,7 @@ final class ServerRunnerTest extends AppTestCase
         yield 'revocation does nothing'       => ['revokeNoop', ['S602', 'S603']];
         yield 'introspection without auth'    => ['introspectNoAuth', ['S801', 'S802']];
         yield 'returns the requested me'      => ['returnsHintMe', ['S220']];
+        yield 'jwt with the wrong issuer'     => ['jwtWrongIssuer', ['S423']];
     }
 
     /** @param list<string> $expected */

@@ -25,6 +25,8 @@ final class MyIndieAuthDriver implements UserAgentDriver
 
     private ?string $credential = null;
 
+    private ?string $introspectionScope = null;
+
     public function __construct(
         private readonly SiteConfig $config,
         private readonly DriverHttp $http,
@@ -37,6 +39,14 @@ final class MyIndieAuthDriver implements UserAgentDriver
     public function withIntrospectionCredential(?string $credential): self
     {
         $this->credential = $credential;
+
+        return $this;
+    }
+
+    /** The scope the credential's resource server accepts, e.g. "create" for Micropub. */
+    public function withIntrospectionScope(?string $scope): self
+    {
+        $this->introspectionScope = $scope;
 
         return $this;
     }
@@ -82,6 +92,10 @@ final class MyIndieAuthDriver implements UserAgentDriver
     {
         if ($question->key === 'credential') {
             return $this->credential ?? '';
+        }
+
+        if ($question->key === 'introspection-scope') {
+            return $this->introspectionScope ?? '';
         }
 
         if ($question->key === 'S206') {

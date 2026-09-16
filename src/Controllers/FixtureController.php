@@ -40,6 +40,7 @@ final class FixtureController
                 <meta charset="utf-8">
                 <title>End-to-end test profile</title>
                 <link rel="indieauth-metadata" href="{$href}">
+                <link rel="micropub" href="https://e2e-profile.pad/micropub">
             </head>
             <body><p>A profile page for automated IndieAuth Rocks runs.</p></body>
             </html>

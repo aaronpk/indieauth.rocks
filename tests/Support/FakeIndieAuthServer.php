@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IndieAuthRocks\Tests\Support;
 
 use Closure;
+use Firebase\JWT\JWT;
 use IndieAuthRocks\Fetch\FetchResult;
 use IndieAuthRocks\Fetch\HttpRequest;
 use IndieAuthRocks\IndieAuth\Pkce;
@@ -37,11 +38,19 @@ final class FakeIndieAuthServer
 
     private int $family = 0;
 
+    /** @var array{kid: string, pem: string, jwk: array<string, string>}|null */
+    private ?array $key = null;
+
     /** @param Closure(string): ?array $fetchClientDocument */
     public function __construct(private readonly Closure $fetchClientDocument, string ...$defects)
     {
         foreach ($defects as $defect) {
             $this->defects[$defect] = true;
+        }
+
+        // Only a server that issues JWTs can issue one with the wrong issuer.
+        if (isset($this->defects['jwtWrongIssuer'])) {
+            $this->defects['jwtTokens'] = true;
         }
     }
 
@@ -49,7 +58,7 @@ final class FakeIndieAuthServer
     {
         $http->html(self::ME, '<!doctype html><html><head><link rel="indieauth-metadata" href="' . self::BASE . 'metadata"></head><body>Me</body></html>');
 
-        $http->json(self::BASE . 'metadata', [
+        $metadata = [
             'issuer'                                         => self::BASE,
             'authorization_endpoint'                         => self::BASE . 'auth',
             'token_endpoint'                                 => self::BASE . 'token',
@@ -63,7 +72,14 @@ final class FakeIndieAuthServer
             'grant_types_supported'                          => ['authorization_code', 'refresh_token'],
             'code_challenge_methods_supported'               => ['S256'],
             'authorization_response_iss_parameter_supported' => true,
-        ]);
+        ];
+
+        if (isset($this->defects['jwtTokens'])) {
+            $metadata['jwks_uri'] = self::BASE . 'jwks';
+            $http->handle(self::BASE . 'jwks', fn (HttpRequest $r): FetchResult => $this->json(['keys' => [$this->key()['jwk']]]));
+        }
+
+        $http->json(self::BASE . 'metadata', $metadata);
 
         $http->handle(self::BASE . 'token', fn (HttpRequest $r): FetchResult => $this->token($r));
         $http->handle(self::BASE . 'auth', fn (HttpRequest $r): FetchResult => $this->authEndpoint($r));
@@ -352,7 +368,7 @@ final class FakeIndieAuthServer
     private function issue(string $scope, string $clientId, string $me, ?string $code, ?int $family = null): array
     {
         $family ??= ++$this->family;
-        $access  = bin2hex(random_bytes(24));
+        $access  = isset($this->defects['jwtTokens']) ? $this->jwt($scope, $clientId, $me) : bin2hex(random_bytes(24));
         $refresh = bin2hex(random_bytes(24));
 
         $grant = ['scope' => $scope, 'client_id' => $clientId, 'me' => $me, 'family' => $family, 'code' => $code];
@@ -367,6 +383,46 @@ final class FakeIndieAuthServer
             'expires_in'    => 3600,
             'refresh_token' => $refresh,
         ];
+    }
+
+    /** A JWT access token (RFC 9068), for servers that issue them. */
+    private function jwt(string $scope, string $clientId, string $me): string
+    {
+        $key = $this->key();
+
+        return JWT::encode([
+            'iss'       => isset($this->defects['jwtWrongIssuer']) ? 'https://evil.example/' : self::BASE,
+            'sub'       => $me,
+            'aud'       => self::BASE . 'resource',
+            'exp'       => time() + 3600,
+            'iat'       => time(),
+            'jti'       => bin2hex(random_bytes(8)),
+            'client_id' => $clientId,
+            'scope'     => $scope,
+            'me'        => $me,
+        ], $key['pem'], 'RS256', $key['kid'], ['typ' => 'at+jwt']);
+    }
+
+    /** @return array{kid: string, pem: string, jwk: array<string, string>} */
+    private function key(): array
+    {
+        if ($this->key !== null) {
+            return $this->key;
+        }
+
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_RSA, 'private_key_bits' => 2048]);
+        openssl_pkey_export($key, $pem);
+        $details = (array) openssl_pkey_get_details($key);
+        $kid     = bin2hex(random_bytes(4));
+
+        return $this->key = ['kid' => $kid, 'pem' => (string) $pem, 'jwk' => [
+            'kty' => 'RSA',
+            'use' => 'sig',
+            'alg' => 'RS256',
+            'kid' => $kid,
+            'n'   => JWT::urlsafeB64Encode((string) $details['rsa']['n']),
+            'e'   => JWT::urlsafeB64Encode((string) $details['rsa']['e']),
+        ]];
     }
 
     private function revokeFamily(int $family): void

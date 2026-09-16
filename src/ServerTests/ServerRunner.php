@@ -16,6 +16,7 @@ use IndieAuthRocks\IndieAuth\Discovery;
 use IndieAuthRocks\IndieAuth\MeVerifier;
 use IndieAuthRocks\ServerTests\Checks\DiscoveryChecks;
 use IndieAuthRocks\ServerTests\Checks\EndpointProbes;
+use IndieAuthRocks\ServerTests\Checks\JwtChecks;
 use IndieAuthRocks\ServerTests\Checks\LandingChecks;
 use IndieAuthRocks\ServerTests\Checks\TokenChecks;
 use IndieAuthRocks\Storage\ExchangeRepository;
@@ -39,7 +40,7 @@ final class ServerRunner
 {
     /** Tests each step records, used when a step is skipped. */
     private const STEP_TESTS = [
-        'login'         => ['S203', 'S205', 'S206', 'S301', 'S401', 'S402', 'S403', 'S404', 'S405', 'S406', 'S407', 'S408', 'S409', 'S410', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'],
+        'login'         => ['S203', 'S205', 'S206', 'S301', 'S401', 'S402', 'S403', 'S404', 'S405', 'S406', 'S407', 'S408', 'S409', 'S410', 'S420', 'S421', 'S422', 'S423', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'],
         'c2'            => ['S204', 'S310', 'S302', 'S303', 'S601', 'S602', 'S603'],
         'c2b'           => ['S302', 'S303', 'S601', 'S602', 'S603'],
         'c3'            => ['S311', 'S312', 'S313', 'S320'],
@@ -132,6 +133,7 @@ final class ServerRunner
 
         $state['discovery_urls'] = $discovery->discoveryUrls();
         $state['issuer']         = $discovery->string('issuer');
+        $state['jwks_uri']       = $discovery->string('jwks_uri');
         $state['methods']        = array_values(array_filter((array) ($discovery->metadata['code_challenge_methods_supported'] ?? []), 'is_string'));
         $state['endpoints']      = [
             'authorization' => $discovery->authorizationEndpoint(),
@@ -505,13 +507,24 @@ final class ServerRunner
                 $state['current'] = null;
             } else {
                 $this->vault->put($run, 'credential', trim($value));
-                $attempt = AuthorizationAttempt::build('introspection', AuthorizationAttempt::APPROVE, $this->urls($run)->clientId(), $this->urls($run)->callback(), [
-                    'scope' => 'profile',
-                    'me'    => (string) $state['profile_url'],
-                ]);
-                $this->remember($run, $state, $attempt);
-                $state['current'] = ['step' => 'introspection', 'attempt' => $attempt->id, 'awaiting' => 'landing'];
+
+                // Some servers issue a token per resource server, so the
+                // credential only sees tokens meant for its own endpoint.
+                $state['current'] = ['step' => 'introspection', 'awaiting' => 'answer', 'question' => (new Question(
+                    'introspection-scope',
+                    'Which scope should the access token have for that resource server to accept it?',
+                    freeText: true,
+                    hint: 'For a Micropub endpoint this is usually "create". Leave it empty to use "profile".',
+                ))->toArray()];
             }
+        } elseif ($key === 'introspection-scope' && $current['step'] === 'introspection' && $current['awaiting'] === 'answer') {
+            $scope   = (string) preg_replace('/[^\x21\x23-\x5B\x5D-\x7E ]/', '', trim($value));
+            $attempt = AuthorizationAttempt::build('introspection', AuthorizationAttempt::APPROVE, $this->urls($run)->clientId(), $this->urls($run)->callback(), [
+                'scope' => $scope === '' ? 'profile' : mb_substr($scope, 0, 200),
+                'me'    => (string) $state['profile_url'],
+            ]);
+            $this->remember($run, $state, $attempt);
+            $state['current'] = ['step' => 'introspection', 'attempt' => $attempt->id, 'awaiting' => 'landing'];
         } else {
             return false;
         }
@@ -666,6 +679,15 @@ final class ServerRunner
             $access  = $reply->string('access_token');
             $refresh = $reply->string('refresh_token');
 
+            $this->recordAll($run, JwtChecks::grade(
+                $access,
+                isset($state['jwks_uri']) ? (string) $state['jwks_uri'] : null,
+                isset($state['issuer']) ? (string) $state['issuer'] : null,
+                $urls->clientId(),
+                $reply->string('scope'),
+                $this->http,
+            ), 'login');
+
             if ($access !== null) {
                 $profile = $reply->json()['profile'] ?? null;
                 $this->recordAll($run, $this->flows->afterSignIn($endpoints, $access, is_array($profile) ? $profile : null), 'login');
@@ -689,7 +711,7 @@ final class ServerRunner
                 }
             }
 
-            foreach (['S301', 'S401', 'S402', 'S403', 'S406', 'S407', 'S408', 'S409', 'S410', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'] as $id) {
+            foreach (['S301', 'S401', 'S402', 'S403', 'S406', 'S407', 'S408', 'S409', 'S410', 'S420', 'S421', 'S422', 'S423', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'] as $id) {
                 $this->results->record($run->id, Verdict::skipped($id, 'No token endpoint.'), 'login');
             }
         }

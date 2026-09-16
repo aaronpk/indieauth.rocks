@@ -90,10 +90,10 @@
             <?php } else { ?>
                 <ul class="rows">
                     <?php foreach ($requests as $r) { ?>
-                        <li class="row-stack">
-                            <div class="wrap"><code><?= $r['method'] ?></code> <?= $r['url'] ?> <span class="muted small"><?= $r['at'] ?></span>
-                                <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
-                            </div>
+                        <li class="request">
+                            <p class="request-head"><code><?= $r['method'] ?></code> <span class="muted small"><?= $r['at'] ?></span></p>
+                            <p class="request-url"><?= $r['url'] ?></p>
+                            <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
                         </li>
                     <?php } ?>
                 </ul>
@@ -104,10 +104,10 @@
                     <summary><?= count($earlier) ?> earlier request<?= count($earlier) === 1 ? '' : 's' ?>, from earlier attempts</summary>
                     <ul class="rows">
                         <?php foreach ($earlier as $r) { ?>
-                            <li class="row-stack">
-                                <div class="wrap"><code><?= $r['method'] ?></code> <?= $r['url'] ?> <span class="muted small"><?= $r['at'] ?></span>
-                                    <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
-                                </div>
+                            <li class="request">
+                                <p class="request-head"><code><?= $r['method'] ?></code> <span class="muted small"><?= $r['at'] ?></span></p>
+                                <p class="request-url"><?= $r['url'] ?></p>
+                                <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
                             </li>
                         <?php } ?>
                     </ul>

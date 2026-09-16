@@ -22,6 +22,7 @@ use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
+use IndieAuthRocks\View\BodyFormat;
 use IndieAuthRocks\View\Template;
 
 /** Server test runs in the browser. */
@@ -277,9 +278,9 @@ final class ServerRunController extends Controller
             'url'              => (string) $e['url'],
             'status'           => $e['status'] !== null ? (int) $e['status'] : null,
             'request_headers'  => self::headerText($e['request_headers']),
-            'request_body'     => (string) ($e['request_body'] ?? ''),
+            'request_body'     => BodyFormat::pretty((string) ($e['request_body'] ?? '')),
             'response_headers' => self::headerText($e['response_headers']),
-            'response_body'    => (string) ($e['response_body'] ?? ''),
+            'response_body'    => BodyFormat::pretty((string) ($e['response_body'] ?? '')),
             'error'            => (string) ($e['error'] ?? ''),
             'created_at'       => (string) $e['created_at'],
         ], $this->exchanges->forStep($run->id, (string) $step));

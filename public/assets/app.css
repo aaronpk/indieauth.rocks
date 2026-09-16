@@ -320,6 +320,8 @@ details > summary::-webkit-details-marker { display: none; }
     align-items: center;
     justify-content: space-between;
     padding: .75rem 1rem;
+    /* Long URLs and wide code blocks shrink to the card instead of spilling out. */
+    min-width: 0;
     background: var(--bg);
     border: 1px solid var(--line);
     border-radius: var(--radius-small);
@@ -330,7 +332,11 @@ details > summary::-webkit-details-marker { display: none; }
 .row-main:hover strong { color: var(--accent); }
 .row-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: .5rem; }
 .row-actions form { margin: 0; }
-.row-stack { align-items: flex-start; }
+/* One request a client made: method and time, then the URL on its own line. */
+.rows > li.request { display: block; }
+.request-head { display: flex; align-items: baseline; gap: .5rem; margin: 0; }
+.request-url { margin: .35rem 0 0; font-family: var(--mono); font-size: .8125rem; line-height: 1.5; word-break: break-all; }
+.request .code-block { margin: .5rem 0 0; }
 
 .link-list { margin: 1.25rem 0 0; padding: 1rem 0 0; list-style: none; border-top: 1px solid var(--line); display: grid; gap: .4rem; }
 

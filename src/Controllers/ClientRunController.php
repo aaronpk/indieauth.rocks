@@ -21,6 +21,7 @@ use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
+use IndieAuthRocks\View\BodyFormat;
 use IndieAuthRocks\View\Template;
 
 /** Client test runs: the profile URLs to sign in with, and their results. */
@@ -149,7 +150,7 @@ final class ClientRunController extends Controller
                 'method' => (string) $e['method'],
                 'url'    => (string) $e['url'],
                 'at'     => substr((string) $e['created_at'], 11),
-                'body'   => (string) ($e['request_body'] ?? ''),
+                'body'   => BodyFormat::pretty((string) ($e['request_body'] ?? '')),
             ];
 
             if ($started !== null && (int) strtotime((string) $e['created_at'] . ' UTC') < $started) {

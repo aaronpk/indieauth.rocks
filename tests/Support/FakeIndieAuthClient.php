@@ -74,9 +74,13 @@ final class FakeIndieAuthClient
             'client_id'     => self::CLIENT_ID,
             'redirect_uri'  => self::REDIRECT_URI,
             'state'         => $state,
-            'scope'         => $scope,
             'me'            => $profile,
         ];
+
+        // A client that only wants to know who you are asks for no scope at all.
+        if ($scope !== '') {
+            $params['scope'] = $scope;
+        }
 
         if (!isset($this->defects['noPkce'])) {
             $params['code_challenge']        = Pkce::challengeFor($verifier);
@@ -84,6 +88,7 @@ final class FakeIndieAuthClient
         }
 
         $this->pending[$state] = [
+            'scope'          => $scope,
             'verifier'       => $verifier,
             'issuer'         => (string) ($metadata['issuer'] ?? ''),
             'token_endpoint' => (string) ($metadata['token_endpoint'] ?? ''),
@@ -144,7 +149,11 @@ final class FakeIndieAuthClient
             return ['outcome' => 'error', 'me' => null, 'reason' => 'iss does not match.'];
         }
 
-        $endpoint = $pending['token_endpoint'] !== '' ? $pending['token_endpoint'] : $pending['authorization'];
+        // A sign-in that asked for no scope needs no access token, so the code
+        // goes to the authorization endpoint (§5.3.2). C410 notes which one a
+        // client uses.
+        $signInOnly = ($pending['scope'] ?? '') === '' && !isset($this->defects['redeemsSignInAtTokenEndpoint']);
+        $endpoint   = $signInOnly || $pending['token_endpoint'] === '' ? $pending['authorization'] : $pending['token_endpoint'];
         $response = $this->http->send(HttpRequest::postForm($endpoint, [
             'grant_type'    => 'authorization_code',
             'code'          => (string) ($query['code'] ?? ''),

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace IndieAuthRocks\Controllers;
 
+use IndieAuthRocks\ClientTests\AutomaticChecks;
 use IndieAuthRocks\ClientTests\ClientGrader;
 use IndieAuthRocks\ClientTests\Markers;
 use IndieAuthRocks\ClientTests\Scenario;
@@ -185,6 +186,9 @@ final class ClientRunController extends Controller
             'outcome'   => (string) ($result['outcome'] ?? Outcome::NOT_RUN->value),
             'summary'   => (string) ($result['summary'] ?? ''),
             'signin'    => $signin,
+            // Automatic checks have nothing to start, so they say what exercises them.
+            'automatic' => !$signin && AutomaticChecks::isAutomatic($test->id) ? AutomaticChecks::hint($test->id) : null,
+            'not_run'   => $result === null || (string) $result['outcome'] === Outcome::NOT_RUN->value,
             'profile'   => $signin && !in_array($n, [306, 307], true) ? $urls->profile($n) : null,
             'typed'     => $n === 111 ? (string) preg_replace('#^https?://#', '', $urls->profile($n)) : null,
             'special'   => $n === 306 ? 'unsolicited' : ($n === 307 ? 'replay' : null),

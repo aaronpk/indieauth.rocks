@@ -5,6 +5,8 @@
  * @var string $outcome
  * @var string $summary
  * @var bool $signin
+ * @var string|null $automatic
+ * @var bool $not_run
  * @var string|null $profile
  * @var string|null $typed
  * @var string|null $special
@@ -40,6 +42,10 @@
             <button type="button" class="copy-button" data-copy="profile-url" hidden>Copy</button>
         </div>
         <p class="hint">If the approval screen asks for a PIN, it is <code><?= $pin ?></code>.</p>
+    <?php } ?>
+
+    <?php if ($automatic !== null) { ?>
+        <p class="muted"><?= $automatic ?><?= $not_run ? ' Nothing has exercised it yet.' : '' ?></p>
     <?php } ?>
 
     <?php if ($special === 'unsolicited') { ?>

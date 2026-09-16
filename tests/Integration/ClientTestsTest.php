@@ -101,12 +101,18 @@ final class ClientTestsTest extends AppTestCase
         return $result;
     }
 
-    /** @return array<string, string> */
-    private function outcomes(): array
+    /** @return array<string, array<string, mixed>> The result rows, after the run page has graded the sign-in tests. */
+    private function results(): array
     {
         $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId);
 
-        return array_map(static fn (array $r): string => (string) $r['outcome'], $this->container->get(ResultRepository::class)->forRun($this->run->id));
+        return $this->container->get(ResultRepository::class)->forRun($this->run->id);
+    }
+
+    /** @return array<string, string> */
+    private function outcomes(): array
+    {
+        return array_map(static fn (array $r): string => (string) $r['outcome'], $this->results());
     }
 
     public function test_a_careful_client_passes(): void
@@ -270,6 +276,31 @@ final class ClientTestsTest extends AppTestCase
 
         $this->play($this->client(), 105);
         $this->assertSame('pass', $this->outcomes()['C105'] ?? 'missing');
+    }
+
+    public function test_a_sign_in_that_asks_for_no_scope_is_noted_by_c410(): void
+    {
+        $client = $this->client();
+
+        $this->assertSame('signed_in', $client->signIn($this->urls->profile(101), '')['outcome']);
+        $this->answer(101, ClientGrader::ANSWER_EXPECTED);
+
+        $results = $this->results();
+        $this->assertSame('pass', $results['C101']['outcome'] ?? 'missing');
+        $this->assertSame('pass', $results['C410']['outcome'] ?? 'missing');
+        $this->assertStringContainsString('authorization endpoint', (string) ($results['C410']['summary'] ?? ''));
+        $this->assertStringContainsString('none requested', (string) ($results['C210']['summary'] ?? ''));
+    }
+
+    public function test_c410_notes_a_sign_in_only_code_redeemed_at_the_token_endpoint(): void
+    {
+        $client = $this->client('redeemsSignInAtTokenEndpoint');
+
+        $this->assertSame('signed_in', $client->signIn($this->urls->profile(101), '')['outcome']);
+
+        $results = $this->results();
+        $this->assertSame('pass', $results['C410']['outcome'] ?? 'missing');
+        $this->assertStringContainsString('token endpoint', (string) ($results['C410']['summary'] ?? ''));
     }
 
     public function test_consent_requires_the_owner_or_the_pin(): void

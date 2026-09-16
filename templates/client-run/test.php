@@ -9,12 +9,14 @@
  * @var string|null $typed
  * @var string|null $special
  * @var list<array{label: string, at: string, bad: bool}> $evidence
+ * @var int $attempt
  * @var string $answer
  * @var array<string, string> $choices
  * @var string $pin
  * @var string $csrf
  * @var string|null $notice
- * @var list<array{method: string, url: string, at: string, body: string}> $requests
+ * @var list<array{method: string, url: string, at: string, body: string}> $requests From this attempt.
+ * @var list<array{method: string, url: string, at: string, body: string}> $earlier From earlier attempts.
  */
 ?>
 <div class="page-header">
@@ -52,6 +54,9 @@
 <?php if ($signin) { ?>
     <section class="card">
         <h2>What your client did</h2>
+        <p class="muted small">
+            <?= $attempt > 1 ? 'Attempt ' . $attempt . '. ' : '' ?>Only the latest attempt counts: signing in to your client with this profile again replaces what earlier attempts showed.
+        </p>
         <?php if ($evidence === []) { ?>
             <p class="empty">Nothing yet.</p>
         <?php } else { ?>
@@ -77,18 +82,37 @@
         </form>
     </section>
 
-    <?php if ($requests !== []) { ?>
+    <?php if ($requests !== [] || $earlier !== []) { ?>
         <section class="card">
             <h2>Requests from your client</h2>
-            <ul class="rows">
-                <?php foreach ($requests as $r) { ?>
-                    <li class="row-stack">
-                        <div class="wrap"><code><?= $r['method'] ?></code> <?= $r['url'] ?> <span class="muted small"><?= $r['at'] ?></span>
-                            <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
-                        </div>
-                    </li>
-                <?php } ?>
-            </ul>
+            <?php if ($requests === []) { ?>
+                <p class="empty">None in this attempt yet.</p>
+            <?php } else { ?>
+                <ul class="rows">
+                    <?php foreach ($requests as $r) { ?>
+                        <li class="row-stack">
+                            <div class="wrap"><code><?= $r['method'] ?></code> <?= $r['url'] ?> <span class="muted small"><?= $r['at'] ?></span>
+                                <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
+                            </div>
+                        </li>
+                    <?php } ?>
+                </ul>
+            <?php } ?>
+
+            <?php if ($earlier !== []) { ?>
+                <details class="section-gap">
+                    <summary><?= count($earlier) ?> earlier request<?= count($earlier) === 1 ? '' : 's' ?>, from earlier attempts</summary>
+                    <ul class="rows">
+                        <?php foreach ($earlier as $r) { ?>
+                            <li class="row-stack">
+                                <div class="wrap"><code><?= $r['method'] ?></code> <?= $r['url'] ?> <span class="muted small"><?= $r['at'] ?></span>
+                                    <?php if ($r['body'] !== '') { ?><pre class="code-block"><code><?= $r['body'] ?></code></pre><?php } ?>
+                                </div>
+                            </li>
+                        <?php } ?>
+                    </ul>
+                </details>
+            <?php } ?>
         </section>
     <?php } ?>
 <?php } ?>

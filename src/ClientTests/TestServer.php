@@ -54,13 +54,14 @@ final class TestServer
 
         if ($alt) {
             // Other-domain profiles returned as me by 403 and 404.
-            $this->markers->mark($run, $n, Markers::ME_FETCHED);
+            $this->markers->mark($run, $n, Markers::ME_FETCHED, $this->markers->lastAuthorized($run, $n));
 
             return $this->page($n, sprintf('<link rel="indieauth-metadata" href="%s">', htmlspecialchars($urls->metadata($n, $n === 403))));
         }
 
         if ($variant === '') {
-            $this->markers->first($run, $n, Markers::PROFILE);
+            // Discovery starting over is a new attempt at the test.
+            $this->markers->first($run, $n, Markers::PROFILE, $this->markers->begin($run, $n));
 
             if ($n === 106) {
                 return Response::redirect($urls->profile(106, 'moved'), 301);
@@ -76,7 +77,7 @@ final class TestServer
         }
 
         if ($variant === 'other' && $n === 402) {
-            $this->markers->mark($run, $n, Markers::ME_FETCHED);
+            $this->markers->mark($run, $n, Markers::ME_FETCHED, $this->markers->lastAuthorized($run, $n));
 
             return $this->page($n, sprintf('<link rel="indieauth-metadata" href="%s">', htmlspecialchars($urls->metadata(402))));
         }
@@ -150,18 +151,31 @@ final class TestServer
      */
     public function authorize(Run $run, int $n, bool $decoy, Request $request): array
     {
-        $this->markers->first($run, $n, $decoy ? Markers::DECOY : Markers::AUTHORIZE);
-
-        $params   = Landing::parseQuery((string) $request->queryString);
-        $errors   = [];
-        $warnings = [];
-        $step     = 'C' . $n;
-
         // A reload of the same request (or Back after a wrong PIN) is not a
         // client reusing state or a challenge.
         // The path is included, so the same state sent to two different tests
         // still counts as reuse.
         $repeat = $this->markers->seenBefore($run, 'request', $request->path . '?' . $request->queryString);
+
+        // A new request after one that already reached this server is a new
+        // attempt, even without fetching the profile again first (a client may
+        // cache discovery). A reload stays in the same attempt.
+        $attempt = $this->markers->current($run, $n);
+
+        if (!$repeat && ($attempt === 0 || $this->markers->has($run, $n, Markers::AUTHORIZE, $attempt) || $this->markers->has($run, $n, Markers::ISSUED, $attempt))) {
+            $attempt = $this->markers->begin($run, $n);
+        }
+
+        $this->markers->first($run, $n, $decoy ? Markers::DECOY : Markers::AUTHORIZE, $attempt);
+
+        if (!$decoy) {
+            $this->markers->noteAuthorized($run, $n, $attempt);
+        }
+
+        $params   = Landing::parseQuery((string) $request->queryString);
+        $errors   = [];
+        $warnings = [];
+        $step     = 'C' . $n;
 
         foreach ($request->repeatedQueryParameters() as $name) {
             $errors[] = sprintf('The %s parameter was sent more than once.', $name);
@@ -245,10 +259,11 @@ final class TestServer
 
         $id = Random::token(18);
         $this->redis->setJson('ct:attempt:' . $id, [
-            'run_id' => $run->id,
-            'n'      => $n,
-            'decoy'  => $decoy,
-            'params' => $params,
+            'run_id'  => $run->id,
+            'n'       => $n,
+            'attempt' => $attempt,
+            'decoy'   => $decoy,
+            'params'  => $params,
         ], self::TOKEN_TTL);
 
         return ['attempt' => $id, 'errors' => [], 'warnings' => $warnings, 'params' => $params];
@@ -280,24 +295,26 @@ final class TestServer
         $redirect = (string) $params['redirect_uri'];
         $state    = $params['state'] ?? null;
         $issuer   = $urls->issuer($n, $decoy);
+        $number   = (int) ($attempt['attempt'] ?? $this->markers->current($run, $n));
 
         $response = [];
 
         if (!$approved || $scenario->authorizationResponse === 'error') {
-            $this->markers->first($run, $n, Markers::ISSUED);
+            $this->markers->first($run, $n, Markers::ISSUED, $number);
             $response['error'] = 'access_denied';
         } else {
             $code = Random::token(32);
             $this->redis->setJson('ct:code:' . hash('sha256', $code), [
                 'run_id'         => $run->id,
                 'n'              => $n,
+                'attempt'        => $number,
                 'client_id'      => (string) $params['client_id'],
                 'redirect_uri'   => $redirect,
                 'code_challenge' => (string) ($params['code_challenge'] ?? ''),
                 'scope'          => (string) ($params['scope'] ?? ''),
             ], self::CODE_TTL);
 
-            $this->markers->first($run, $n, Markers::ISSUED);
+            $this->markers->first($run, $n, Markers::ISSUED, $number);
             $response['code'] = $code;
         }
 
@@ -342,17 +359,19 @@ final class TestServer
             return null;
         }
 
-        $code = Random::token(32);
+        $code    = Random::token(32);
+        $attempt = $this->markers->begin($run, 306);
         $this->redis->setJson('ct:code:' . hash('sha256', $code), [
             'run_id'         => $run->id,
             'n'              => 306,
+            'attempt'        => $attempt,
             'client_id'      => (string) $client['client_id'],
             'redirect_uri'   => (string) $client['redirect_uri'],
             'code_challenge' => '',
             'scope'          => '',
         ], self::CODE_TTL);
 
-        $this->markers->first($run, 306, Markers::ISSUED);
+        $this->markers->first($run, 306, Markers::ISSUED, $attempt);
 
         return Url::appendQuery((string) $client['redirect_uri'], [
             'code'  => $code,
@@ -370,7 +389,7 @@ final class TestServer
             return null;
         }
 
-        $this->markers->first($run, 307, Markers::ISSUED);
+        $this->markers->first($run, 307, Markers::ISSUED, $this->markers->begin($run, 307));
 
         return (string) $callback['url'];
     }
@@ -415,9 +434,11 @@ final class TestServer
             return $this->error('invalid_grant', 'The code belongs to another test run.');
         }
 
-        $test = (int) $code['n'];
-        $this->markers->first($run, $test, Markers::REDEEMED);
-        $this->redis->setJson('ct:used:' . $hash, ['run_id' => $run->id, 'n' => $test], self::TOKEN_TTL);
+        // The redemption belongs to the attempt the code was issued in.
+        $test    = (int) $code['n'];
+        $attempt = isset($code['attempt']) ? (int) $code['attempt'] : null;
+        $this->markers->first($run, $test, Markers::REDEEMED, $attempt);
+        $this->redis->setJson('ct:used:' . $hash, ['run_id' => $run->id, 'n' => $test, 'attempt' => $attempt], self::TOKEN_TTL);
 
         if ($test !== 306) {
             $problems = [];
@@ -451,7 +472,7 @@ final class TestServer
             return $this->error('invalid_grant', sprintf('Test C%d expected your client to reject the authorization response instead of redeeming this code.', $test));
         }
 
-        return $this->tokenResponse($run, $test, (string) $code['client_id'], $scopes, $atTokenEndpoint);
+        return $this->tokenResponse($run, $test, $attempt, (string) $code['client_id'], $scopes, $atTokenEndpoint);
     }
 
     public function userinfo(Run $run, int $n, Request $request): Response
@@ -489,7 +510,7 @@ final class TestServer
     // ================================================================= helpers
 
     /** @param list<string> $scopes */
-    private function tokenResponse(Run $run, int $n, string $clientId, array $scopes, bool $atTokenEndpoint): Response
+    private function tokenResponse(Run $run, int $n, ?int $attempt, string $clientId, array $scopes, bool $atTokenEndpoint): Response
     {
         $urls     = $this->urls($run);
         $scenario = Scenario::for($n);
@@ -521,7 +542,7 @@ final class TestServer
         }
 
         if ($atTokenEndpoint && $scopes !== []) {
-            $body += $this->issueTokens($run, $n, $clientId, $scopes, $me, $scenario->tokenResponse === 'expiring' ? 120 : self::TOKEN_TTL, 0);
+            $body += $this->issueTokens($run, $n, $attempt, $clientId, $scopes, $me, $scenario->tokenResponse === 'expiring' ? 120 : self::TOKEN_TTL, 0);
         }
 
         return $this->json($body);
@@ -531,11 +552,11 @@ final class TestServer
      * @param list<string> $scopes
      * @return array<string, mixed>
      */
-    private function issueTokens(Run $run, int $n, string $clientId, array $scopes, string $me, int $expiresIn, int $generation): array
+    private function issueTokens(Run $run, int $n, ?int $attempt, string $clientId, array $scopes, string $me, int $expiresIn, int $generation): array
     {
         $access  = Random::token(32);
         $refresh = Random::token(32);
-        $data    = ['run_id' => $run->id, 'n' => $n, 'client_id' => $clientId, 'scope' => implode(' ', $scopes), 'me' => $me];
+        $data    = ['run_id' => $run->id, 'n' => $n, 'attempt' => $attempt, 'client_id' => $clientId, 'scope' => implode(' ', $scopes), 'me' => $me];
 
         // The token really expires when expires_in says, so clients that only
         // refresh after a 401 can pass C502.
@@ -589,11 +610,13 @@ final class TestServer
 
         $data['used'] = true;
         $this->redis->setJson('ct:refresh:' . $hash, $data, 30 * 86_400);
-        $this->markers->mark($run, $test, Markers::REFRESHED);
+        $attempt = isset($data['attempt']) ? (int) $data['attempt'] : null;
+        $this->markers->mark($run, $test, Markers::REFRESHED, $attempt);
 
         return $this->json(['me' => $data['me']] + $this->issueTokens(
             $run,
             $test,
+            $attempt,
             (string) $data['client_id'],
             $requested !== [] ? $requested : $granted,
             (string) $data['me'],
@@ -655,9 +678,10 @@ final class TestServer
         return $uris;
     }
 
+    /** The latest observation wins, so a client that fixes a mistake passes. */
     private function observe(Run $run, Verdict $verdict, string $step): void
     {
-        $this->results->recordWorst($run->id, $verdict, $step);
+        $this->results->record($run->id, $verdict, $step);
     }
 
     private function page(int $n, string $head): Response

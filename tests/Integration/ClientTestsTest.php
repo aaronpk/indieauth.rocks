@@ -7,6 +7,7 @@ namespace IndieAuthRocks\Tests\Integration;
 use IndieAuthRocks\Bootstrap;
 use IndieAuthRocks\ClientTests\ClientGrader;
 use IndieAuthRocks\ClientTests\ClientTestUrls;
+use IndieAuthRocks\ClientTests\Markers;
 use IndieAuthRocks\Engine\Run;
 use IndieAuthRocks\Http\Request;
 use IndieAuthRocks\Http\Response;
@@ -183,6 +184,92 @@ final class ClientTestsTest extends AppTestCase
         $careless->callback((string) $unsolicited->header('location'));
 
         $this->assertSame('fail', $this->outcomes()['C306'] ?? 'missing');
+    }
+
+    public function test_the_latest_attempt_decides_the_result(): void
+    {
+        $this->play($this->client('naiveRelative'), 105);
+        $this->assertSame('fail', $this->outcomes()['C105'] ?? 'missing');
+
+        // Getting it right the second time passes.
+        $this->play($this->client(), 105);
+        $this->assertSame('pass', $this->outcomes()['C105'] ?? 'missing');
+
+        // The evidence shown is the latest attempt's. (Requests are split into
+        // this attempt and earlier ones by time, to the second, which a test
+        // running within one second cannot show.)
+        $page = $this->request('GET', self::BASE . 'client-runs/' . $this->run->publicId . '/tests/C105');
+        $this->assertStringNotContainsString('Requested a wrongly resolved relative URL', $page->body);
+
+        // Getting it wrong afterwards, even by hand, fails again.
+        $this->request('GET', $this->urls->profile(105));
+        $this->request('GET', self::BASE . 'u/' . $this->run->runKey . '/105/m/105');
+        $this->assertSame('fail', $this->outcomes()['C105'] ?? 'missing');
+    }
+
+    public function test_a_redemption_from_an_earlier_attempt_does_not_count(): void
+    {
+        $this->play($this->client('skipStateCheck'), 301);
+        $this->assertSame('fail', $this->outcomes()['C301'] ?? 'missing');
+
+        $this->play($this->client(), 301);
+        $this->assertSame('pass', $this->outcomes()['C301'] ?? 'missing');
+    }
+
+    public function test_an_answer_is_about_one_attempt(): void
+    {
+        $this->client()->signIn($this->urls->profile(101));
+        $this->answer(101, ClientGrader::ANSWER_ERROR);
+        $this->assertSame('fail', $this->outcomes()['C101'] ?? 'missing');
+
+        $this->client()->signIn($this->urls->profile(101));
+        $this->assertSame('needs_input', $this->outcomes()['C101'] ?? 'missing');
+    }
+
+    public function test_fetching_the_profile_again_after_signing_in_keeps_the_attempt(): void
+    {
+        $this->play($this->client(), 402);
+        $this->request('GET', $this->urls->profile(402));
+
+        $this->assertSame('pass', $this->outcomes()['C402'] ?? 'missing');
+    }
+
+    public function test_the_latest_observation_decides_automatic_checks(): void
+    {
+        $this->play($this->client('noPkce'), 101);
+        $this->assertSame('fail', $this->outcomes()['C205'] ?? 'missing');
+
+        $this->play($this->client(), 102);
+        $this->assertSame('pass', $this->outcomes()['C205'] ?? 'missing');
+    }
+
+    public function test_reloading_an_authorization_request_is_the_same_attempt(): void
+    {
+        $markers   = $this->container->get(Markers::class);
+        $authorize = $this->urls->authorization(101) . '?' . http_build_query([
+            'response_type'         => 'code',
+            'client_id'             => FakeIndieAuthClient::CLIENT_ID,
+            'redirect_uri'          => FakeIndieAuthClient::REDIRECT_URI,
+            'state'                 => str_repeat('s', 20),
+            'code_challenge'        => str_repeat('c', 43),
+            'code_challenge_method' => 'S256',
+            'me'                    => $this->urls->profile(101),
+        ]);
+
+        $this->request('GET', $authorize);
+        $this->assertSame(1, $markers->current($this->run, 101));
+
+        $this->request('GET', $authorize);
+        $this->assertSame(1, $markers->current($this->run, 101));
+    }
+
+    public function test_evidence_from_before_attempts_were_counted_is_graded_until_the_next_attempt(): void
+    {
+        $this->container->get(Markers::class)->first($this->run, 105, Markers::NAIVE, 0);
+        $this->assertSame('fail', $this->outcomes()['C105'] ?? 'missing');
+
+        $this->play($this->client(), 105);
+        $this->assertSame('pass', $this->outcomes()['C105'] ?? 'missing');
     }
 
     public function test_consent_requires_the_owner_or_the_pin(): void

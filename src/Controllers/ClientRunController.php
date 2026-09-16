@@ -132,9 +132,32 @@ final class ClientRunController extends Controller
         $n       = $test->number();
         $urls    = $this->server->urls($run);
         $result  = $this->results->forRun($run->id)[$test->id] ?? null;
-        $markers = Scenario::exists($n) ? $this->markers->all($run, $n) : [];
         $signin  = Scenario::exists($n);
+        $graded  = $signin ? $this->markers->graded($run, $n) : ['attempt' => 0, 'markers' => []];
+        $markers = $graded['markers'];
         $flash   = $this->guard->takeFlash($visitor);
+
+        // Requests from before this attempt began are kept, but set apart.
+        $started  = isset($markers[Markers::STARTED]) ? (int) $markers[Markers::STARTED] : null;
+        $requests = $signin ? [...$this->exchanges->forStep($run->id, 'C' . $n), ...$this->exchanges->forStep($run->id, 'C' . $n . 'd')] : [];
+        usort($requests, static fn (array $a, array $b): int => (int) $a['id'] <=> (int) $b['id']);
+
+        $current = [];
+        $earlier = [];
+        foreach ($requests as $e) {
+            $row = [
+                'method' => (string) $e['method'],
+                'url'    => (string) $e['url'],
+                'at'     => substr((string) $e['created_at'], 11),
+                'body'   => (string) ($e['request_body'] ?? ''),
+            ];
+
+            if ($started !== null && (int) strtotime((string) $e['created_at'] . ' UTC') < $started) {
+                $earlier[] = $row;
+            } else {
+                $current[] = $row;
+            }
+        }
 
         $evidence = [];
         foreach ([
@@ -165,7 +188,8 @@ final class ClientRunController extends Controller
             'typed'     => $n === 111 ? (string) preg_replace('#^https?://#', '', $urls->profile($n)) : null,
             'special'   => $n === 306 ? 'unsolicited' : ($n === 307 ? 'replay' : null),
             'evidence'  => $evidence,
-            'answer'    => (string) ($run->state['answers'][$n] ?? ''),
+            'attempt'   => $graded['attempt'],
+            'answer'    => $signin ? (string) $this->answerFor($run, $n, $graded['attempt']) : '',
             'choices'   => [
                 ClientGrader::ANSWER_EXPECTED => 'It signed me in as ' . $expected,
                 ClientGrader::ANSWER_OTHER    => 'It signed me in as a different URL',
@@ -175,12 +199,8 @@ final class ClientRunController extends Controller
             'pin'       => (string) ($run->state['pin'] ?? ''),
             'csrf'      => $visitor->session()->csrf,
             'notice'    => is_string($flash['message'] ?? null) ? $flash['message'] : null,
-            'requests'  => array_map(static fn (array $e): array => [
-                'method' => (string) $e['method'],
-                'url'    => (string) $e['url'],
-                'at'     => substr((string) $e['created_at'], 11),
-                'body'   => (string) ($e['request_body'] ?? ''),
-            ], $signin ? [...$this->exchanges->forStep($run->id, 'C' . $n), ...$this->exchanges->forStep($run->id, 'C' . $n . 'd')] : []),
+            'requests'  => $current,
+            'earlier'   => $earlier,
             'script'    => 'copy.js',
             'wide'      => true,
         ], visitor: $visitor)->withNoStore(), $visitor);
@@ -200,8 +220,10 @@ final class ClientRunController extends Controller
             throw HttpException::badRequest('That answer is not one of the choices.');
         }
 
-        $state                   = $run->state;
-        $state['answers'][$n]    = $value;
+        // An answer is about one attempt; signing in again asks for a new one.
+        $state                         = $run->state;
+        $state['answers'][$n]          = $value;
+        $state['answer_attempts'][$n]  = $this->markers->graded($run, $n)['attempt'];
         $this->runs->save($run, $state);
 
         return Response::seeOther('/client-runs/' . $run->publicId . '/tests/' . $id);
@@ -236,14 +258,29 @@ final class ClientRunController extends Controller
 
     private function gradeAll(Run $run): void
     {
+        $existing = $this->results->forRun($run->id);
+
         foreach (Scenario::SIGNIN_TESTS as $n) {
-            $answer  = $run->state['answers'][$n] ?? null;
-            $verdict = ClientGrader::grade($n, $this->markers->all($run, $n), $answer, time());
+            $graded  = $this->markers->graded($run, $n);
+            $answer  = $this->answerFor($run, $n, $graded['attempt']);
+            $verdict = ClientGrader::grade($n, $graded['markers'], $answer, time());
 
             if ($verdict !== null) {
                 $this->results->record($run->id, $verdict, 'C' . $n, $answer !== null ? 'human' : 'auto');
+            } elseif (isset($existing['C' . $n])) {
+                // Only the latest attempt counts, so one with nothing to grade
+                // yet clears what an earlier attempt showed.
+                $this->results->forget($run->id, 'C' . $n);
             }
         }
+    }
+
+    /** The person's answer, if it was given for this attempt. Answers do not carry over to a new attempt. */
+    private function answerFor(Run $run, int $n, int $attempt): ?string
+    {
+        $answer = $run->state['answers'][$n] ?? null;
+
+        return is_string($answer) && (int) ($run->state['answer_attempts'][$n] ?? 0) === $attempt ? $answer : null;
     }
 
     /**

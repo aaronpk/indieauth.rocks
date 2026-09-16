@@ -65,6 +65,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 - Once signed in, start a client run. Each test gets a profile URL, `/u/{run key}/{n}`, with its own test server at `/s/{run key}/{n}/…`.
 - Sign in to your client with each profile. The consent screen says TEST SERVER and needs your session or the run's PIN.
 - The site records what your client does (fetches, requests, redemptions). Afterwards you tell it what your client showed.
+- Only the latest attempt at a test counts. Signing in again with a profile replaces what earlier attempts showed, whether they passed or failed, and the checks on every request (C2xx, C4xx, C5xx) keep the latest observation.
 - "Must reject" tests are proven automatically if the client redeems the code it should have rejected.
 
 ### Implementation reports

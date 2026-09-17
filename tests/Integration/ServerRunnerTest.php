@@ -326,4 +326,70 @@ final class ServerRunnerTest extends AppTestCase
         $this->assertGreaterThan($before, count($exchanges->forStep($run->id, 'discovery')));
         $this->assertSame(Run::COMPLETE, $this->container->get(RunRepository::class)->find($run->id)->status);
     }
+
+    public function test_each_test_shows_only_the_requests_made_for_it(): void
+    {
+        $exchanges = $this->container->get(\IndieAuthRocks\Storage\ExchangeRepository::class);
+        $run       = $this->drive($this->server());
+        $bodies    = static fn (array $rows): string => implode("\n", array_map(static fn (array $row): string => (string) $row['request_body'], $rows));
+
+        // S407 only reads the sign-in's token response: none of the refresh tests' requests.
+        $s407 = $exchanges->forTest($run->id, 'login', 'S407');
+        $this->assertStringContainsString('grant_type=authorization_code', $bodies($s407));
+        $this->assertStringNotContainsString('grant_type=refresh_token', $bodies($s407));
+        $this->assertLessThan(count($exchanges->forStep($run->id, 'login')), count($s407));
+
+        // The refresh tests see their refreshes, and the redemption that issued the token.
+        $s501 = $exchanges->forTest($run->id, 'login', 'S501');
+        $this->assertStringContainsString('grant_type=refresh_token', $bodies($s501));
+        $this->assertStringContainsString('grant_type=authorization_code', $bodies($s501));
+        $refreshes = static fn (array $rows): int => count(array_filter($rows, static fn (array $row): bool => str_contains((string) $row['request_body'], 'grant_type=refresh_token')));
+        $this->assertSame(4, $refreshes($exchanges->forStep($run->id, 'login')));
+        // S502: the first refresh, whose token it uses, and its own with another client_id.
+        $this->assertSame(2, $refreshes($exchanges->forTest($run->id, 'login', 'S502')));
+
+        // Probes are tagged one by one.
+        $this->assertSame(['OPTIONS'], array_values(array_unique(array_column(array_filter($exchanges->forTest($run->id, 'probes', 'S334'), static fn (array $row): bool => $row['test_ids'] !== null), 'method'))));
+    }
+
+    public function test_request_tags_nest_and_are_restored_after_an_exception(): void
+    {
+        $http      = $this->container->get(\IndieAuthRocks\Fetch\RecordingHttpClient::class);
+        $exchanges = $this->container->get(\IndieAuthRocks\Storage\ExchangeRepository::class);
+        $run       = $this->container->get(ServerRunner::class)->start(FakeIndieAuthServer::ME, 'cli', false);
+
+        $this->http->on('https://tags.example/a', 200);
+        $this->http->on('https://tags.example/b', 200);
+        $this->http->on('https://tags.example/c', 200);
+        $this->http->on('https://tags.example/d', 200);
+
+        $get = static fn (string $path) => $http->send(\IndieAuthRocks\Fetch\HttpRequest::get('https://tags.example/' . $path));
+
+        $http->context($run->id, 'tags');
+        $http->forTests(['S1', 'S2'], function () use ($http, $get): void {
+            $get('a');
+            $http->forTests(['S3'], static fn () => $get('b'));
+
+            try {
+                $http->forTests(['S4'], static function (): never {
+                    throw new \RuntimeException('boom');
+                });
+            } catch (\RuntimeException) {
+            }
+
+            $get('c');
+        });
+        $get('d');
+        $http->context(null);
+
+        $tags = array_column($exchanges->forStep($run->id, 'tags'), 'test_ids', 'url');
+
+        $this->assertSame([
+            'https://tags.example/a' => 'S1,S2',
+            'https://tags.example/b' => 'S3',
+            'https://tags.example/c' => 'S1,S2',
+            'https://tags.example/d' => null,
+        ], $tags);
+        $this->assertSame(['https://tags.example/a', 'https://tags.example/c', 'https://tags.example/d'], array_column($exchanges->forTest($run->id, 'tags', 'S2'), 'url'));
+    }
 }

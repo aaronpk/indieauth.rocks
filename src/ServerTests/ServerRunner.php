@@ -57,6 +57,12 @@ final class ServerRunner
 
     private const STEPS_WITHOUT_RECORDED_SKIP = ['c2b', 'c3b', 'c4', 'c5', 'c8'];
 
+    /** Tests that grade the sign-in's token response or use its tokens, so its request shows on their pages. */
+    private const SIGN_IN_TOKEN_TESTS = ['S301', 'S401', 'S402', 'S403', 'S404', 'S405', 'S406', 'S407', 'S408', 'S409', 'S410', 'S420', 'S421', 'S422', 'S423', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'];
+
+    /** Tests that use the tokens from the code c2 or c2b redeems. */
+    private const REPLAY_TOKEN_TESTS = ['S302', 'S303', 'S601', 'S602', 'S603'];
+
     /** Steps whose checks need no browser, so they can run again at any time. */
     public const AUTOMATIC_STEPS = ['discovery', 'probes'];
 
@@ -584,7 +590,7 @@ final class ServerRunner
         }
 
         $this->http->context($run->id, 'S304');
-        $reply = $this->client->redeem((string) $state['endpoints']['authorization'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
+        $reply = $this->client->forTests(['S304'], fn (): Reply => $this->client->redeem((string) $state['endpoints']['authorization'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier));
 
         $this->results->record($run->id, $reply->isSuccess()
             ? Verdict::fail('S304', 'A code was still accepted 11 minutes after it was issued.')
@@ -662,13 +668,15 @@ final class ServerRunner
             'Your server fetched the client_id document.',
             'Your server did not fetch the client_id document, so it could not show the app\'s name or check its redirect URIs.'), 'login');
 
-        $verifyMe = fn (string $me): array => (new MeVerifier(new Discovery($this->http)))
-            ->verify($me, (array) $state['discovery_urls'], (string) $endpoints['authorization']);
+        $verifyMe = fn (string $me): array => $this->client->forTests(['S405'], fn (): array => (new MeVerifier(new Discovery($this->http)))
+            ->verify($me, (array) $state['discovery_urls'], (string) $endpoints['authorization']));
 
         $tester = null;
 
         if ($endpoints['token'] !== null) {
-            $reply = $this->client->redeem($endpoints['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
+            // Graded by S301 and S401–S423; the refresh, userinfo and
+            // introspection tests use its tokens.
+            $reply = $this->client->forTests(self::SIGN_IN_TOKEN_TESTS, fn (): Reply => $this->client->redeem($endpoints['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier));
 
             $this->results->record($run->id, Verdict::check('S301', $reply->isSuccess(),
                 'The code was exchanged for tokens.', 'The token endpoint returned ' . $reply->describe() . '.'), 'login');
@@ -679,14 +687,14 @@ final class ServerRunner
             $access  = $reply->string('access_token');
             $refresh = $reply->string('refresh_token');
 
-            $this->recordAll($run, JwtChecks::grade(
+            $this->recordAll($run, $this->client->forTests(['S422'], fn (): array => JwtChecks::grade(
                 $access,
                 isset($state['jwks_uri']) ? (string) $state['jwks_uri'] : null,
                 isset($state['issuer']) ? (string) $state['issuer'] : null,
                 $urls->clientId(),
                 $reply->string('scope'),
                 $this->http,
-            ), 'login');
+            )), 'login');
 
             if ($access !== null) {
                 $profile = $reply->json()['profile'] ?? null;
@@ -702,7 +710,7 @@ final class ServerRunner
                 }
             }
         } else {
-            $reply  = $this->client->redeem((string) $endpoints['authorization'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
+            $reply  = $this->client->forTests(['S404', 'S405'], fn (): Reply => $this->client->redeem((string) $endpoints['authorization'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier));
             $graded = TokenChecks::grade($reply, [], $verifyMe);
 
             foreach ($graded['verdicts'] as $verdict) {
@@ -746,7 +754,7 @@ final class ServerRunner
 
         if ($verdict === null && $id === 'S220') {
             $urls  = $this->urls($run);
-            $reply = $this->client->redeem((string) $state['endpoints']['authorization'], (string) $landing->code(), $urls->clientId(), $urls->callback(), $attempt->verifier);
+            $reply = $this->client->forTests(['S220'], fn (): Reply => $this->client->redeem((string) $state['endpoints']['authorization'], (string) $landing->code(), $urls->clientId(), $urls->callback(), $attempt->verifier));
             $me    = $reply->string('me');
 
             $verdict = match (true) {
@@ -794,7 +802,7 @@ final class ServerRunner
         $reply     = null;
 
         if ($step === 'c2') {
-            $wrong = $this->client->redeem($token, $code, $urls->clientId(), $redirect, TokenClient::madeUp() . 'Zz9');
+            $wrong = $this->client->forTests(['S310'], fn (): Reply => $this->client->redeem($token, $code, $urls->clientId(), $redirect, TokenClient::madeUp() . 'Zz9'));
 
             if ($wrong->isSuccess()) {
                 $this->results->record($run->id, Verdict::fail('S310', 'Tokens were issued for a code_verifier that does not match the challenge.'), $step);
@@ -802,7 +810,7 @@ final class ServerRunner
             } else {
                 $this->results->record($run->id, Verdict::pass('S310', 'The wrong verifier was refused (' . $wrong->describe() . ').'), $step);
 
-                $reply = $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier);
+                $reply = $this->client->forTests(self::REPLAY_TOKEN_TESTS, fn (): Reply => $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier));
 
                 if ($reply->isSuccess()) {
                     $state['flags']['burns_on_failure'] = false;
@@ -814,10 +822,10 @@ final class ServerRunner
                 }
             }
         } else {
-            $reply = $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier);
+            $reply = $this->client->forTests(self::REPLAY_TOKEN_TESTS, fn (): Reply => $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier));
 
             if (!$reply->isSuccess()) {
-                foreach (['S302', 'S303', 'S601', 'S602', 'S603'] as $id) {
+                foreach (self::REPLAY_TOKEN_TESTS as $id) {
                     $this->results->record($run->id, Verdict::error($id, 'The code could not be exchanged: ' . $reply->describe() . '.'), $step);
                 }
 
@@ -832,10 +840,10 @@ final class ServerRunner
         // S303 compares before and after: a token that never worked at the
         // userinfo endpoint would otherwise look revoked.
         $worked = $access !== null && $endpoints['userinfo'] !== null
-            && $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess();
+            && $this->client->forTests(['S303'], fn (): bool => $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess());
 
         // S302, S303
-        $replay = $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier);
+        $replay = $this->client->forTests(['S302', 'S303'], fn (): Reply => $this->client->redeem($token, $code, $urls->clientId(), $redirect, $attempt->verifier));
         $this->results->record($run->id, $replay->isSuccess()
             ? Verdict::fail('S302', 'The same code was exchanged a second time.')
             : Verdict::pass('S302', 'The used code was refused (' . $replay->describe() . ').'), $step);
@@ -847,7 +855,7 @@ final class ServerRunner
         } elseif (!$worked) {
             $this->results->record($run->id, Verdict::skipped('S303', 'The access token did not work at the userinfo endpoint even before the code was replayed, so revocation could not be checked.'), $step);
         } else {
-            $check           = $this->client->userinfo($endpoints['userinfo'], $access);
+            $check           = $this->client->forTests(['S303'], fn (): Reply => $this->client->userinfo($endpoints['userinfo'], $access));
             $revokedByReplay = !$check->isSuccess();
 
             $this->results->record($run->id, Verdict::check('S303', $revokedByReplay,
@@ -891,7 +899,7 @@ final class ServerRunner
 
         $urls      = $this->urls($run);
         $endpoints = $state['endpoints'];
-        $reply     = $this->client->redeem((string) $endpoints['token'], $code, $urls->clientId(), $urls->callback(true), $attempt->verifier);
+        $reply     = $this->client->forTests(['S601', 'S602', 'S603'], fn (): Reply => $this->client->redeem((string) $endpoints['token'], $code, $urls->clientId(), $urls->callback(true), $attempt->verifier));
         $access    = $reply->string('access_token');
 
         if ($access === null) {
@@ -936,11 +944,11 @@ final class ServerRunner
 
         $recorded = [];
         foreach ($negatives as $id) {
-            $reply = match ($id) {
+            $reply = $this->client->forTests([$id], fn (): Reply => match ($id) {
                 'S311' => $this->client->redeem($endpoint, $code, $client, $redirect, null),
                 'S312' => $this->client->redeem($endpoint, $code, $urls->otherClientId(), $redirect, $attempt->verifier),
                 'S313' => $this->client->redeem($endpoint, $code, $client, $urls->callback(true), $attempt->verifier),
-            };
+            });
 
             $verdict = $reply->isSuccess()
                 ? Verdict::fail($id, 'The code was accepted: ' . $reply->describe() . '.')
@@ -954,7 +962,8 @@ final class ServerRunner
             return;
         }
 
-        $reply = $this->client->redeem($endpoint, $code, $client, $redirect, $attempt->verifier);
+        // Whether it works also decides if the rejections before it proved anything.
+        $reply = $this->client->forTests(['S320', ...$recorded], fn (): Reply => $this->client->redeem($endpoint, $code, $client, $redirect, $attempt->verifier));
 
         if ($reply->isSuccess()) {
             $this->results->record($run->id, match (true) {
@@ -999,7 +1008,7 @@ final class ServerRunner
         }
 
         $urls  = $this->urls($run);
-        $reply = $this->client->redeem((string) $state['endpoints']['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
+        $reply = $this->client->forTests(['S321'], fn (): Reply => $this->client->redeem((string) $state['endpoints']['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier));
 
         $this->results->record($run->id, match (true) {
             $reply->string('access_token') !== null => Verdict::fail('S321', 'An access token was issued for a code without any scope.'),
@@ -1023,7 +1032,7 @@ final class ServerRunner
         }
 
         $urls  = $this->urls($run);
-        $reply = $this->client->redeem((string) $state['endpoints']['authorization'], $code, $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'Zz9');
+        $reply = $this->client->forTests(['S322'], fn (): Reply => $this->client->redeem((string) $state['endpoints']['authorization'], $code, $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'Zz9'));
 
         $this->results->record($run->id, $reply->isSuccess()
             ? Verdict::fail('S322', 'A code_verifier was accepted for a code issued without a code_challenge.')
@@ -1060,7 +1069,7 @@ final class ServerRunner
         }
 
         $urls   = $this->urls($run);
-        $reply  = $this->client->redeem((string) $endpoints['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier);
+        $reply  = $this->client->forTests(['S803', 'S804'], fn (): Reply => $this->client->redeem((string) $endpoints['token'], $code, $urls->clientId(), $urls->callback(), $attempt->verifier));
         $access = $reply->string('access_token');
 
         if ($access === null) {
@@ -1071,7 +1080,7 @@ final class ServerRunner
             return;
         }
 
-        $active = $this->client->introspect((string) $endpoints['introspection'], $access, $credential);
+        $active = $this->client->forTests(['S803'], fn (): Reply => $this->client->introspect((string) $endpoints['introspection'], $access, $credential));
         $json   = $active->json() ?? [];
 
         $this->results->record($run->id, match (true) {
@@ -1082,7 +1091,7 @@ final class ServerRunner
             default                                    => Verdict::pass('S803', 'The token is active for ' . $json['me'] . '.'),
         }, 'introspection');
 
-        $invalid = $this->client->introspect((string) $endpoints['introspection'], TokenClient::madeUp(), $credential);
+        $invalid = $this->client->forTests(['S804'], fn (): Reply => $this->client->introspect((string) $endpoints['introspection'], TokenClient::madeUp(), $credential));
         $json    = $invalid->json();
 
         $this->results->record($run->id, match (true) {

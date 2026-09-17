@@ -8,12 +8,27 @@ use IndieAuthRocks\Crypto\Random;
 use IndieAuthRocks\Fetch\FetchException;
 use IndieAuthRocks\Fetch\HttpClient;
 use IndieAuthRocks\Fetch\HttpRequest;
+use IndieAuthRocks\Fetch\RecordingHttpClient;
 
 /** The back-channel requests an IndieAuth client makes. */
 final class TokenClient
 {
     public function __construct(private readonly HttpClient $http)
     {
+    }
+
+    /**
+     * Tag the requests $fn sends with the tests they are made for, when they
+     * are being recorded.
+     *
+     * @template T
+     * @param list<string>  $testIds
+     * @param callable(): T $fn
+     * @return T
+     */
+    public function forTests(array $testIds, callable $fn): mixed
+    {
+        return $this->http instanceof RecordingHttpClient ? $this->http->forTests($testIds, $fn) : $fn();
     }
 
     public function send(HttpRequest $request): Reply

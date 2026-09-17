@@ -31,7 +31,7 @@ final class EndpointProbes
                 $verdicts[] = Verdict::skipped($id, 'No token endpoint.');
             }
         } else {
-            $unknown = $this->client->redeem($token, TokenClient::madeUp(), $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'xyz');
+            $unknown = $this->client->forTests(['S330', 'S332', 'S906'], fn (): Reply => $this->client->redeem($token, TokenClient::madeUp(), $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'xyz'));
 
             // S330
             $verdicts[] = match (true) {
@@ -42,8 +42,10 @@ final class EndpointProbes
             };
 
             // S331
-            $missing     = $this->client->send(HttpRequest::postForm($token, ['code' => TokenClient::madeUp(), 'client_id' => $urls->clientId()]));
-            $unsupported = $this->client->send(HttpRequest::postForm($token, ['grant_type' => 'password', 'username' => 'test', 'password' => 'test', 'client_id' => $urls->clientId()]));
+            [$missing, $unsupported] = $this->client->forTests(['S331', 'S332'], fn (): array => [
+                $this->client->send(HttpRequest::postForm($token, ['code' => TokenClient::madeUp(), 'client_id' => $urls->clientId()])),
+                $this->client->send(HttpRequest::postForm($token, ['grant_type' => 'password', 'username' => 'test', 'password' => 'test', 'client_id' => $urls->clientId()])),
+            ]);
 
             if ($missing->isSuccess() || $unsupported->isSuccess()) {
                 $verdicts[] = Verdict::fail('S331', 'A request without a valid grant_type was accepted.');
@@ -60,16 +62,16 @@ final class EndpointProbes
             $verdicts[] = Verdict::check('S332', $bad === [], 'Error responses are JSON with an error code.', 'Some error responses were not JSON objects with an "error" member.');
 
             // S333
-            $get = $this->client->send(HttpRequest::get($token . (str_contains($token, '?') ? '&' : '?') . http_build_query([
+            $get = $this->client->forTests(['S333'], fn (): Reply => $this->client->send(HttpRequest::get($token . (str_contains($token, '?') ? '&' : '?') . http_build_query([
                 'grant_type' => 'authorization_code', 'code' => TokenClient::madeUp(), 'client_id' => $urls->clientId(),
-            ]), 'application/json'));
+            ]), 'application/json')));
             $verdicts[] = Verdict::check('S333', !$get->isSuccess() || $get->string('error') !== null,
                 'GET requests are refused (' . $get->describe() . ').', 'The token endpoint answered a GET request with ' . $get->describe() . '.');
 
             // S334
-            $options = $this->client->send(new HttpRequest('OPTIONS', $token, [
+            $options = $this->client->forTests(['S334'], fn (): Reply => $this->client->send(new HttpRequest('OPTIONS', $token, [
                 'Origin' => 'https://browser-app.example', 'Access-Control-Request-Method' => 'POST',
-            ]));
+            ])));
             $verdicts[] = Verdict::pass('S334', $options->header('access-control-allow-origin') !== null
                 ? 'Preflight allowed for ' . $options->header('access-control-allow-origin') . '.'
                 : 'No CORS preflight support; browser-based apps cannot call the token endpoint directly.');
@@ -78,7 +80,7 @@ final class EndpointProbes
             if (!str_starts_with($token, 'https://')) {
                 $verdicts[] = Verdict::skipped('S901', 'The token endpoint is not https to begin with.');
             } else {
-                $plain = $this->client->redeem('http://' . substr($token, 8), TokenClient::madeUp(), $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'xyz');
+                $plain = $this->client->forTests(['S901'], fn (): Reply => $this->client->redeem('http://' . substr($token, 8), TokenClient::madeUp(), $urls->clientId(), $urls->callback(), TokenClient::madeUp() . 'xyz'));
                 $processed = $plain->result !== null && !$plain->result->isRedirect() && $plain->status() !== 403 && $plain->string('error') !== null;
 
                 $verdicts[] = Verdict::check('S901', !$processed,
@@ -96,7 +98,7 @@ final class EndpointProbes
         if (($endpoints['authorization'] ?? null) === null) {
             $verdicts[] = Verdict::skipped('S902', 'No authorization endpoint.');
         } else {
-            $page    = $this->client->send(HttpRequest::get((string) $endpoints['authorization'], 'text/html'));
+            $page    = $this->client->forTests(['S902'], fn (): Reply => $this->client->send(HttpRequest::get((string) $endpoints['authorization'], 'text/html')));
             $frame   = $page->header('x-frame-options');
             $csp     = (string) $page->header('content-security-policy');
             $verdicts[] = Verdict::check('S902', $frame !== null || str_contains($csp, 'frame-ancestors'),
@@ -108,7 +110,7 @@ final class EndpointProbes
         if (($endpoints['revocation'] ?? null) === null) {
             $verdicts[] = Verdict::skipped('S604', 'No revocation endpoint.');
         } else {
-            $revoke = $this->client->revoke((string) $endpoints['revocation'], TokenClient::madeUp());
+            $revoke = $this->client->forTests(['S604'], fn (): Reply => $this->client->revoke((string) $endpoints['revocation'], TokenClient::madeUp()));
             $verdicts[] = Verdict::check('S604', $revoke->status() === 200, 'Returned HTTP 200.', 'Revoking an unknown token returned ' . $revoke->describe() . ' instead of HTTP 200.');
         }
 
@@ -117,10 +119,10 @@ final class EndpointProbes
             $verdicts[] = Verdict::skipped('S702', 'No userinfo endpoint.');
             $verdicts[] = Verdict::skipped('S703', 'No userinfo endpoint.');
         } else {
-            $none = $this->client->userinfo((string) $endpoints['userinfo'], null);
+            $none = $this->client->forTests(['S702'], fn (): Reply => $this->client->userinfo((string) $endpoints['userinfo'], null));
             $verdicts[] = Verdict::check('S702', $none->status() === 401, 'Returned HTTP 401.', 'A request without a token returned ' . $none->describe() . ' instead of HTTP 401.');
 
-            $invalid = $this->client->userinfo((string) $endpoints['userinfo'], TokenClient::madeUp());
+            $invalid = $this->client->forTests(['S703'], fn (): Reply => $this->client->userinfo((string) $endpoints['userinfo'], TokenClient::madeUp()));
             $verdicts[] = Verdict::check('S703', $invalid->status() === 401,
                 'Returned HTTP 401' . (str_contains((string) $invalid->header('www-authenticate'), 'invalid_token') ? ' with error="invalid_token".' : '.'),
                 'A made-up token returned ' . $invalid->describe() . ' instead of HTTP 401.');

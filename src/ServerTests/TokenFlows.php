@@ -27,7 +27,7 @@ final class TokenFlows
         if ($endpoints['userinfo'] === null) {
             $verdicts[] = Verdict::skipped('S701', 'No userinfo endpoint.');
         } else {
-            $reply = $this->client->userinfo($endpoints['userinfo'], $access);
+            $reply = $this->client->forTests(['S701'], fn (): Reply => $this->client->userinfo($endpoints['userinfo'], $access));
             $json  = $reply->json();
 
             $verdicts[] = match (true) {
@@ -41,7 +41,7 @@ final class TokenFlows
             $verdicts[] = Verdict::skipped('S801', 'No introspection endpoint.');
             $verdicts[] = Verdict::skipped('S802', 'No introspection endpoint.');
         } else {
-            $reply = $this->client->introspect($endpoints['introspection'], $access, null);
+            $reply = $this->client->forTests(['S801', 'S802'], fn (): Reply => $this->client->introspect($endpoints['introspection'], $access, null));
             $json  = $reply->json() ?? [];
 
             $verdicts[] = Verdict::check('S801', $reply->status() === 401,
@@ -73,8 +73,8 @@ final class TokenFlows
         $token    = $endpoints['token'];
         $verdicts = [];
 
-        // S501
-        $first = $this->client->refresh($token, $refresh, $clientId);
+        // S501. The rest of the chain uses the tokens it returns.
+        $first = $this->client->forTests(['S501', 'S502', 'S503', 'S504', 'S505'], fn (): Reply => $this->client->refresh($token, $refresh, $clientId));
 
         if (!$first->isSuccess() || $first->string('access_token') === null) {
             $verdicts[] = Verdict::fail('S501', 'Refreshing returned ' . $first->describe() . '.');
@@ -104,7 +104,7 @@ final class TokenFlows
 
         // S503
         $granted  = array_filter(explode(' ', (string) $first->string('scope')));
-        $escalate = $this->client->refresh($token, $liveRefresh, $clientId, trim(implode(' ', array_unique([...$granted, 'profile', 'create', 'delete']))));
+        $escalate = $this->client->forTests(['S503'], fn (): Reply => $this->client->refresh($token, $liveRefresh, $clientId, trim(implode(' ', array_unique([...$granted, 'profile', 'create', 'delete'])))));
 
         if ($escalate->isSuccess()) {
             $newScopes  = array_filter(explode(' ', (string) $escalate->string('scope')));
@@ -119,7 +119,7 @@ final class TokenFlows
         }
 
         // S502
-        $other = $this->client->refresh($token, $liveRefresh, $otherClientId);
+        $other = $this->client->forTests(['S502'], fn (): Reply => $this->client->refresh($token, $liveRefresh, $otherClientId));
 
         if ($other->isSuccess()) {
             $verdicts[]  = Verdict::fail('S502', 'A different client_id was able to use the refresh token.');
@@ -136,8 +136,8 @@ final class TokenFlows
         } else {
             // S505 needs the newest token to work beforehand, or a broken
             // userinfo endpoint would look like a revoked token family.
-            $worked = $endpoints['userinfo'] !== null && $this->client->userinfo($endpoints['userinfo'], $liveAccess)->isSuccess();
-            $reuse  = $this->client->refresh($token, $refresh, $clientId);
+            $worked = $endpoints['userinfo'] !== null && $this->client->forTests(['S505'], fn (): bool => $this->client->userinfo($endpoints['userinfo'], $liveAccess)->isSuccess());
+            $reuse  = $this->client->forTests(['S504', 'S505'], fn (): Reply => $this->client->refresh($token, $refresh, $clientId));
 
             if ($reuse->isSuccess()) {
                 $verdicts[]  = Verdict::warning('S504', 'The replaced refresh token still works.');
@@ -152,7 +152,7 @@ final class TokenFlows
                 } elseif (!$worked) {
                     $verdicts[] = Verdict::skipped('S505', 'The newest access token did not work at the userinfo endpoint even before the old refresh token was reused, so revocation could not be checked.');
                 } else {
-                    $check = $this->client->userinfo($endpoints['userinfo'], $liveAccess);
+                    $check = $this->client->forTests(['S505'], fn (): Reply => $this->client->userinfo($endpoints['userinfo'], $liveAccess));
                     $verdicts[] = Verdict::check('S505', !$check->isSuccess(),
                         'Reusing the old refresh token revoked the newest tokens too.',
                         'After an old refresh token was reused, the newest access token still works.');
@@ -190,9 +190,9 @@ final class TokenFlows
         }
 
         $verdicts = [];
-        $worked   = $endpoints['userinfo'] !== null && $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess();
+        $worked   = $endpoints['userinfo'] !== null && $this->client->forTests(['S602'], fn (): bool => $this->client->userinfo($endpoints['userinfo'], $access)->isSuccess());
 
-        $revoke     = $this->client->revoke($endpoints['revocation'], $access);
+        $revoke     = $this->client->forTests(['S601', 'S602'], fn (): Reply => $this->client->revoke($endpoints['revocation'], $access));
         $verdicts[] = Verdict::check('S601', $revoke->status() === 200, 'Returned HTTP 200.', 'Revoking an access token returned ' . $revoke->describe() . '.');
 
         if ($endpoints['userinfo'] === null) {
@@ -200,15 +200,17 @@ final class TokenFlows
         } elseif (!$worked) {
             $verdicts[] = Verdict::skipped('S602', 'The access token did not work at the userinfo endpoint even before it was revoked, so revocation could not be checked.');
         } else {
-            $check      = $this->client->userinfo($endpoints['userinfo'], $access);
+            $check      = $this->client->forTests(['S602'], fn (): Reply => $this->client->userinfo($endpoints['userinfo'], $access));
             $verdicts[] = Verdict::check('S602', !$check->isSuccess(), 'The revoked token is refused (' . $check->describe() . ').', 'The revoked access token still works.');
         }
 
         if ($refresh === null || $endpoints['token'] === null) {
             $verdicts[] = Verdict::skipped('S603', 'No refresh token was issued.');
         } else {
-            $revokeRefresh = $this->client->revoke($endpoints['revocation'], $refresh);
-            $use           = $this->client->refresh($endpoints['token'], $refresh, $clientId);
+            [$revokeRefresh, $use] = $this->client->forTests(['S603'], fn (): array => [
+                $this->client->revoke($endpoints['revocation'], $refresh),
+                $this->client->refresh($endpoints['token'], $refresh, $clientId),
+            ]);
 
             $verdicts[] = match (true) {
                 $revokeRefresh->status() !== 200 => Verdict::fail('S603', 'Revoking the refresh token returned ' . $revokeRefresh->describe() . '.'),

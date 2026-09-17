@@ -115,6 +115,14 @@ final class BrowserRunTest extends AppTestCase
         $this->assertSame(200, $transcript->status);
         $this->assertStringContainsString('redacted len=', $transcript->body);
         $this->assertDoesNotMatchRegularExpression('/"access_token":\s*"[0-9a-f]{48}"/', $transcript->body);
+
+        // Each test shows the requests made for it, plus the landing its step shares.
+        $expires = $this->request('GET', $runUrl . '/tests/S407');
+        $this->assertStringContainsString('grant_type=authorization_code', $expires->body);
+        $this->assertStringNotContainsString('grant_type=refresh_token', $expires->body);
+        $this->assertStringContainsString('/callback/', $expires->body);
+        $this->assertStringContainsString('made for those tests', $expires->body);
+        $this->assertStringContainsString('grant_type=refresh_token', $this->request('GET', $runUrl . '/tests/S501')->body);
     }
 
     public function test_another_browser_cannot_drive_or_read_the_transcripts_of_a_run(): void

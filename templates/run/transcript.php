@@ -9,6 +9,7 @@
  * @var string $csrf
  * @var string|null $notice
  * @var list<array<string, mixed>> $exchanges
+ * @var int $hidden_count Requests in the same step that were made for other tests.
  */
 ?>
 <div class="page-header">
@@ -40,6 +41,9 @@
 <section class="card">
     <h2>HTTP log</h2>
     <p class="muted small">Secrets such as codes, verifiers and tokens are redacted: each shows its length and the start of its SHA-256 hash, so you can tell identical values apart.</p>
+    <?php if ($hidden_count > 0) { ?>
+        <p class="muted small">This test ran alongside others. <?= $hidden_count ?> other <?= $hidden_count === 1 ? 'request' : 'requests' ?> made for those tests <?= $hidden_count === 1 ? 'is' : 'are' ?> not shown here.</p>
+    <?php } ?>
     <?php if ($exchanges === []) { ?>
         <p class="empty">No HTTP requests were recorded for this test.</p>
     <?php } ?>

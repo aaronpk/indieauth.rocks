@@ -283,7 +283,10 @@ final class ServerRunController extends Controller
             'response_body'    => BodyFormat::pretty((string) ($e['response_body'] ?? '')),
             'error'            => (string) ($e['error'] ?? ''),
             'created_at'       => (string) $e['created_at'],
-        ], $this->exchanges->forStep($run->id, (string) $step));
+        ], $this->exchanges->forTest($run->id, (string) $step, $test->id));
+
+        // Tests graded together share a step; requests made only for the others are left out.
+        $hidden = $step === null ? 0 : count($this->exchanges->forStep($run->id, (string) $step)) - count($exchanges);
 
         return $this->guard->commit($this->page('run/transcript', $test->id . ' ' . $test->title, [
             'run_id'       => $run->publicId,
@@ -297,6 +300,7 @@ final class ServerRunController extends Controller
             'csrf'         => $visitor->session()->csrf,
             'notice'       => is_string($flash['message'] ?? null) && $flash['message'] !== '' ? $flash['message'] : null,
             'exchanges'    => $exchanges,
+            'hidden_count' => $hidden,
             'wide'         => true,
         ], visitor: $visitor)->withNoStore(), $visitor);
     }

@@ -19,11 +19,13 @@ final class ExchangeRepository
     {
     }
 
-    public function recordOutbound(int $runId, ?string $step, HttpRequest $request, ?FetchResult $result, ?string $error = null): int
+    /** @param list<string>|null $testIds The tests the request was made for; null for the whole step. */
+    public function recordOutbound(int $runId, ?string $step, HttpRequest $request, ?FetchResult $result, ?string $error = null, ?array $testIds = null): int
     {
         return $this->db->insert('exchanges', [
             'run_id'                => $runId,
             'step'                  => $step,
+            'test_ids'              => $testIds === null || $testIds === [] ? null : implode(',', $testIds),
             'direction'             => 'outbound',
             'method'                => $request->method,
             'url'                   => mb_substr(Redactor::url($request->url), 0, 2000),
@@ -67,6 +69,20 @@ final class ExchangeRepository
     public function forStep(int $runId, string $step): array
     {
         return $this->decodeRows($this->db->all('SELECT * FROM exchanges WHERE run_id = ? AND step = ? ORDER BY id', [$runId, $step]));
+    }
+
+    /**
+     * The requests in a step that one test used: those made for it, and those
+     * that belong to the whole step, like the landing on the callback.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function forTest(int $runId, string $step, string $testId): array
+    {
+        return $this->decodeRows($this->db->all(
+            'SELECT * FROM exchanges WHERE run_id = ? AND step = ? AND (test_ids IS NULL OR FIND_IN_SET(?, test_ids) > 0) ORDER BY id',
+            [$runId, $step, $testId],
+        ));
     }
 
     /** @return list<array<string, mixed>> */

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace IndieAuthRocks\Drivers\MyIndieAuth;
+namespace IndieAuthRocks\Drivers\IndieKey;
 
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Drivers\DriverHttp;
@@ -16,10 +16,10 @@ use IndieAuthRocks\ServerTests\Question;
 use RuntimeException;
 
 /**
- * Drives myindieauth.com: signs in with a software passkey enrolled by
- * `driver:myindieauth:enroll`, then approves or denies on its consent screen.
+ * Drives IndieKey: signs in with a software passkey enrolled by
+ * `driver:indiekey:enroll`, then approves or denies on its consent screen.
  */
-final class MyIndieAuthDriver implements UserAgentDriver
+final class IndieKeyDriver implements UserAgentDriver
 {
     private const MAX_HOPS = 12;
 
@@ -170,7 +170,7 @@ final class MyIndieAuthDriver implements UserAgentDriver
         $challenge = $options['publicKey']['challenge'] ?? null;
 
         if (!is_string($challenge)) {
-            throw new RuntimeException('myindieauth did not return a passkey challenge: ' . json_encode($options));
+            throw new RuntimeException('IndieKey did not return a passkey challenge: ' . json_encode($options));
         }
 
         $assertion = $this->authenticator->authenticate(self::unb64($challenge));
@@ -186,7 +186,7 @@ final class MyIndieAuthDriver implements UserAgentDriver
         ], $csrf);
 
         if (($result['ok'] ?? false) !== true) {
-            throw new RuntimeException('Passkey sign-in to myindieauth failed: ' . ($result['error'] ?? json_encode($result)));
+            throw new RuntimeException('Passkey sign-in to IndieKey failed: ' . ($result['error'] ?? json_encode($result)));
         }
 
         return rtrim($this->base, '/') . (string) $result['redirect'];

@@ -9,7 +9,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
   - `state` and `iss` a client doesn't verify
   - a returned `me` a client trusts without looking
 - **Results:** every result links to the specification section it checks and has a redacted HTTP transcript. Results can be published as implementation reports.
-- **Structure:** follows [myindieauth.com](../myindieauth.com): plain PHP 8.2, no framework, explicit wiring in `src/Bootstrap.php`, plain templates escaped by default, one stylesheet, no inline JavaScript, MySQL and Redis.
+- **Structure:** follows [IndieKey](../myindieauth.com): plain PHP 8.2, no framework, explicit wiring in `src/Bootstrap.php`, plain templates escaped by default, one stylesheet, no inline JavaScript, MySQL and Redis.
 - **Dependencies:** no Composer packages at runtime; PHPUnit is the only dev dependency.
 
 ## The test catalogs
@@ -114,17 +114,17 @@ bin/indieauth-rocks doctor
 | `migrate` | Apply database migrations |
 | `doctor` | Check configuration, MySQL, Redis and `APP_SECRET` |
 | `catalog [--suite=server\|client] [--format=md]` | Print the test catalogs |
-| `run-server <profile-url> [--driver=myindieauth] [--extended] [--slow] [--json]` | Run the server suite from the command line; exits non-zero on any failure |
-| `driver:myindieauth:enroll --base=URL [--profile=URL]` | Create the account the myindieauth driver signs in with |
+| `run-server <profile-url> [--driver=indiekey] [--extended] [--slow] [--json]` | Run the server suite from the command line; exits non-zero on any failure |
+| `driver:indiekey:enroll --base=URL [--profile=URL]` | Create the account the IndieKey driver signs in with |
 | `prune` | Delete old unpublished runs |
 
-**Unattended runs:** the browser steps are pluggable (`src/Drivers/UserAgentDriver.php`), so a driver can run the whole server suite with nobody watching. `MyIndieAuthDriver` signs in to [myindieauth.com](../myindieauth.com) with a software passkey and uses its consent screen.
+**Unattended runs:** the browser steps are pluggable (`src/Drivers/UserAgentDriver.php`), so a driver can run the whole server suite with nobody watching. `IndieKeyDriver` signs in to [IndieKey](../myindieauth.com) with a software passkey and uses its consent screen.
 
-## End-to-end runs against myindieauth.com
+## End-to-end runs against IndieKey
 
-`tests/e2e/myindieauth.sh` runs the full server suite over real HTTPS against a local myindieauth.com. It expects:
+`tests/e2e/indiekey.sh` runs the full server suite over real HTTPS against a local IndieKey (the checkout at `../myindieauth.com`, served as `myindieauth.pad`). It expects:
 
-1. **nginx:** the vhosts in `tests/e2e/nginx-e2e.conf` (installed at `/web/conf/nginx/e2e-indieauth.conf` on the dev machine). They serve `myindieauth.pad` and three hostnames for this app (`indieauth-rocks.pad`, `redirect.indieauth-rocks.pad`, and the fixture profile host `e2e-profile.pad`). Each app gets its settings from `fastcgi_param`, so neither `.env` changes.
+1. **nginx:** the vhosts in `tests/e2e/nginx-e2e.conf` (installed at `/web/conf/nginx/e2e-indieauth.conf` on the dev machine). They serve IndieKey as `myindieauth.pad` (the hostname predates the rename; it is the passkey relying-party id of the enrolled driver account and the name on the local certificate, so it stays until the driver is re-enrolled) and three hostnames for this app (`indieauth-rocks.pad`, `redirect.indieauth-rocks.pad`, and the fixture profile host `e2e-profile.pad`). Each app gets its settings from `fastcgi_param`, so neither `.env` changes.
 2. **`/etc/hosts`:** `127.0.0.1 myindieauth.pad indieauth-rocks.pad redirect.indieauth-rocks.pad e2e-profile.pad`
 3. **TLS:** a local CA and certificate in `storage/e2e-tls/`, trusted by both apps through `curl.cainfo`. These commands create them:
    ```sh
@@ -134,7 +134,7 @@ bin/indieauth-rocks doctor
    openssl x509 -req -in pad.csr -CA ca.crt -CAkey ca.key -CAcreateserial -out pad.crt -days 825 -extfile ext.cnf
    cat /etc/ssl/certs/ca-certificates.crt ca.crt > ca-bundle.pem
    ```
-4. **myindieauth database:** a `myindieauth_e2e` database, migrated with `DB_NAME=myindieauth_e2e bin/myindieauth migrate`.
+4. **IndieKey database:** a `myindieauth_e2e` database, migrated from the IndieKey checkout with `DB_NAME=myindieauth_e2e bin/indiekey migrate` (again after any IndieKey migration lands).
 
 On first run the script enrolls a driver account and verifies the fixture profile domain, then runs the suite. Add `--extended` for the extended tests.
 
@@ -157,7 +157,7 @@ src/Bootstrap.php  services and routes for the main host, the second origin and 
 src/Engine/        catalogs, outcomes, runs, the token vault
 src/ServerTests/   ServerRunner, checks, probe grading, token flows
 src/ClientTests/   the test server, scenarios, evidence markers, grading
-src/Drivers/       unattended browser drivers (myindieauth)
+src/Drivers/       unattended browser drivers (IndieKey)
 src/Fetch/         SSRF-hardened HTTP, transcripts, redaction
 src/IndieAuth/     discovery, me verification, profile URL and PKCE helpers
 src/Storage/       PDO and Redis wrappers, repositories, migrations

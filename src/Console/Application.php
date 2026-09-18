@@ -23,8 +23,8 @@ final class Application
         'doctor'  => 'Check configuration, database, Redis and hostnames',
         'catalog' => 'List tests: catalog [--suite=server|client] [--format=text|md]',
         'prune'   => 'Delete unpublished runs older than RUN_RETENTION_DAYS',
-        'run-server' => 'Run the server suite: run-server <profile-url> [--driver=myindieauth] [--extended] [--json]',
-        'driver:myindieauth:enroll' => 'Create a driver account on a myindieauth server: --base=URL [--profile=URL]',
+        'run-server' => 'Run the server suite: run-server <profile-url> [--driver=indiekey] [--extended] [--json]',
+        'driver:indiekey:enroll' => 'Create a driver account on an IndieKey server: --base=URL [--profile=URL]',
         'help'    => 'Show this list',
     ];
 
@@ -48,7 +48,7 @@ final class Application
                 'catalog'              => $this->catalog($args),
                 'prune'                => $this->prune(),
                 'run-server'           => (new RunServerCommand($this->out, $this->container))->run($args),
-                'driver:myindieauth:enroll' => (new EnrollCommand($this->out, $this->container->get(SiteConfig::class)))->run($args),
+                'driver:indiekey:enroll' => (new EnrollCommand($this->out, $this->container->get(SiteConfig::class)))->run($args),
                 'help', '--help', '-h' => $this->help(),
                 default                => $this->unknown($command),
             };

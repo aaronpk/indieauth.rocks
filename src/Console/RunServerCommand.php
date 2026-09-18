@@ -8,8 +8,8 @@ use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Container;
 use IndieAuthRocks\Drivers\DriverHttp;
 use IndieAuthRocks\Drivers\DriverOutcome;
-use IndieAuthRocks\Drivers\MyIndieAuth\DriverConfigFile;
-use IndieAuthRocks\Drivers\MyIndieAuth\MyIndieAuthDriver;
+use IndieAuthRocks\Drivers\IndieKey\DriverConfigFile;
+use IndieAuthRocks\Drivers\IndieKey\IndieKeyDriver;
 use IndieAuthRocks\Drivers\UserAgentDriver;
 use IndieAuthRocks\Engine\Catalog;
 use IndieAuthRocks\ServerTests\Action;
@@ -38,7 +38,7 @@ final class RunServerCommand
         $unknown = $args->unknownOptions(self::OPTIONS);
 
         if ($profile === null || $unknown !== []) {
-            $this->out->error('Usage: run-server <profile-url> [--driver=myindieauth] [--driver-config=path] [--ca-file=path] [--credential=secret] [--introspection-scope=create] [--extended] [--slow] [--json]');
+            $this->out->error('Usage: run-server <profile-url> [--driver=indiekey] [--driver-config=path] [--ca-file=path] [--credential=secret] [--introspection-scope=create] [--extended] [--slow] [--json]');
 
             return 1;
         }
@@ -159,17 +159,17 @@ final class RunServerCommand
             return null;
         }
 
-        if ($name !== 'myindieauth') {
-            throw new \RuntimeException('Unknown driver "' . $name . '". Available: myindieauth');
+        if ($name !== 'indiekey') {
+            throw new \RuntimeException('Unknown driver "' . $name . '". Available: indiekey');
         }
 
-        $file = new DriverConfigFile((string) $args->option('driver-config', SiteConfig::root() . '/storage/drivers/myindieauth.json'));
+        $file = new DriverConfigFile((string) $args->option('driver-config', SiteConfig::root() . '/storage/drivers/indiekey.json'));
 
         if (!$file->exists()) {
-            throw new \RuntimeException('No driver settings found. Run driver:myindieauth:enroll first.');
+            throw new \RuntimeException('No driver settings found. Run driver:indiekey:enroll first.');
         }
 
-        return (new MyIndieAuthDriver(
+        return (new IndieKeyDriver(
             $config,
             new DriverHttp($args->option('ca-file')),
             $file->authenticator(),

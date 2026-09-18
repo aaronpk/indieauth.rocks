@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace IndieAuthRocks\Drivers\MyIndieAuth;
+namespace IndieAuthRocks\Drivers\IndieKey;
 
 use OpenSSLAsymmetricKey;
 use RuntimeException;

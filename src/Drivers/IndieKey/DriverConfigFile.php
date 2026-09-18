@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace IndieAuthRocks\Drivers\MyIndieAuth;
+namespace IndieAuthRocks\Drivers\IndieKey;
 
 use RuntimeException;
 
 /**
- * The enrolled account a MyIndieAuthDriver signs in as: server URL, profile
+ * The enrolled account an IndieKeyDriver signs in as: server URL, profile
  * URL, and the software authenticator's private key and counter. Written with
  * 0600 permissions under storage/, which is not in version control.
  */
@@ -61,7 +61,7 @@ final class DriverConfigFile
             (string) parse_url($base, PHP_URL_HOST),
             rtrim($base, '/'),
             (string) $this->get('private_key'),
-            MyIndieAuthDriver::unb64((string) $this->get('credential_id')),
+            IndieKeyDriver::unb64((string) $this->get('credential_id')),
             (int) $this->get('sign_count'),
         );
     }

@@ -7,13 +7,13 @@ namespace IndieAuthRocks\Console;
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Controllers\FixtureController;
 use IndieAuthRocks\Drivers\DriverHttp;
-use IndieAuthRocks\Drivers\MyIndieAuth\DriverConfigFile;
-use IndieAuthRocks\Drivers\MyIndieAuth\MyIndieAuthDriver;
-use IndieAuthRocks\Drivers\MyIndieAuth\SoftwareAuthenticator;
+use IndieAuthRocks\Drivers\IndieKey\DriverConfigFile;
+use IndieAuthRocks\Drivers\IndieKey\IndieKeyDriver;
+use IndieAuthRocks\Drivers\IndieKey\SoftwareAuthenticator;
 use RuntimeException;
 
 /**
- * driver:myindieauth:enroll — create an account on a myindieauth.com server
+ * driver:indiekey:enroll — create an account on an IndieKey server
  * with a software passkey, add and verify the fixture profile domain, and save
  * what the driver needs to sign in later.
  */
@@ -30,11 +30,11 @@ final class EnrollCommand
         $base     = rtrim((string) $args->option('base', ''), '/') . '/';
         $profile  = (string) ($args->option('profile') ?? $this->config->fixtureUrl() ?? '');
         $username = (string) $args->option('username', 'rocks-e2e');
-        $path     = (string) $args->option('config', SiteConfig::root() . '/storage/drivers/myindieauth.json');
+        $path     = (string) $args->option('config', SiteConfig::root() . '/storage/drivers/indiekey.json');
         $http     = new DriverHttp($args->option('ca-file'));
 
         if ($base === '/' || $profile === '') {
-            $this->out->error('Usage: driver:myindieauth:enroll --base=https://myindieauth.example/ [--profile=https://profile.example/] [--username=rocks-e2e]');
+            $this->out->error('Usage: driver:indiekey:enroll --base=https://indiekey.example/ [--profile=https://profile.example/] [--username=rocks-e2e]');
 
             return 1;
         }
@@ -49,10 +49,10 @@ final class EnrollCommand
             throw new RuntimeException('Registration failed: ' . ($options['error'] ?? json_encode($options)) . ' (try another --username)');
         }
 
-        $attestation = $authenticator->register(MyIndieAuthDriver::unb64((string) $options['publicKey']['challenge']));
+        $attestation = $authenticator->register(IndieKeyDriver::unb64((string) $options['publicKey']['challenge']));
         $created     = $http->postJson($base . 'register', [
-            'clientDataJSON'    => MyIndieAuthDriver::b64($attestation['clientDataJSON']),
-            'attestationObject' => MyIndieAuthDriver::b64($attestation['attestationObject']),
+            'clientDataJSON'    => IndieKeyDriver::b64($attestation['clientDataJSON']),
+            'attestationObject' => IndieKeyDriver::b64($attestation['attestationObject']),
             'label'             => 'IndieAuth Rocks driver',
             'next'              => '/account',
         ], $csrf);
@@ -68,7 +68,7 @@ final class EnrollCommand
             'base'          => $base,
             'profile'       => $profile,
             'username'      => $username,
-            'credential_id' => MyIndieAuthDriver::b64($authenticator->credentialId()),
+            'credential_id' => IndieKeyDriver::b64($authenticator->credentialId()),
             'private_key'   => $authenticator->exportPrivateKey(),
             'sign_count'    => $authenticator->signCount(),
         ]);

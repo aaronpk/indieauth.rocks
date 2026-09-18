@@ -11,7 +11,7 @@ use IndieAuthRocks\Http\Response;
 
 /**
  * Development only: the home page of the profile URL used by automated
- * end-to-end runs. `driver:myindieauth:enroll` writes the metadata URL it
+ * end-to-end runs. `driver:indiekey:enroll` writes the metadata URL it
  * should link to.
  */
 final class FixtureController

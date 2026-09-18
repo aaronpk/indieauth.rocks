@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace IndieAuthRocks\Drivers\MyIndieAuth;
+namespace IndieAuthRocks\Drivers\IndieKey;
 
 /**
  * Marks a string as a CBOR byte string rather than a text string.

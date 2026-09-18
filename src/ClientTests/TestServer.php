@@ -101,7 +101,12 @@ final class TestServer
             $head .= sprintf("\n    <link rel=\"token_endpoint\" href=\"%s\">", htmlspecialchars($urls->token($n, $decoy)));
         }
 
-        $response = $this->page($n, $head);
+        // Where a comment or a bio would put it: a link the client must not read.
+        $body = $scenario->bodyLink
+            ? sprintf("\n    <link rel=\"indieauth-metadata\" href=\"%s\">", htmlspecialchars($urls->metadata($n, true)))
+            : '';
+
+        $response = $this->page($n, $head, $body);
 
         if ($scenario->headerLink !== null) {
             $response = $response->withHeader('link', sprintf('<%s>; rel="indieauth-metadata"', $urls->metadata($n, !$scenario->headerLink)));
@@ -684,7 +689,7 @@ final class TestServer
         $this->results->record($run->id, $verdict, $step);
     }
 
-    private function page(int $n, string $head): Response
+    private function page(int $n, string $head, string $body = ''): Response
     {
         return Response::html(sprintf(<<<'HTML'
             <!doctype html>
@@ -695,10 +700,10 @@ final class TestServer
             </head>
             <body class="h-card">
                 <h1 class="p-name">Test profile C%d</h1>
-                <p>A profile URL for an IndieAuth Rocks client test. Sign in to your client with this URL.</p>
+                <p>A profile URL for an IndieAuth Rocks client test. Sign in to your client with this URL.</p>%s
             </body>
             </html>
-            HTML, $n, $head, $n))->withHeader('access-control-allow-origin', '*');
+            HTML, $n, $head, $n, $body))->withHeader('access-control-allow-origin', '*');
     }
 
     /** @param array<string, mixed> $data */

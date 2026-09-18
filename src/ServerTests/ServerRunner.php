@@ -1187,7 +1187,8 @@ final class ServerRunner
                 && !$this->neededBecauseCodesBurn($state, $step)                          => 'Not needed.',
             in_array($step, ['S208', 'S209', 'S210', 'S211', 'S212', 'S213', 'S214'], true) && !$this->config->hasDistinctAltOrigin()
                                                                                           => 'This site has no second origin configured.',
-            $step === 'S216' && in_array('plain', (array) $state['methods'], true)        => 'Your server advertises the plain method.',
+            in_array($step, ['S216', 'S222'], true) && in_array('plain', (array) $state['methods'], true)
+                                                                                          => 'Your server advertises the plain method.',
             in_array($step, ['c2', 'c2b', 'c6', 'introspection'], true) && $endpoints['token'] === null
                                                                                           => 'No token endpoint.',
             $step === 'introspection' && $endpoints['introspection'] === null             => 'No introspection endpoint.',
@@ -1226,6 +1227,8 @@ final class ServerRunner
             'S218'            => AuthorizationAttempt::build($step, $cancel, $main, $urls->callback(), ['state' => null, 'me' => $me]),
             'S219'            => AuthorizationAttempt::build($step, $cancel, $urls->clientId('x/../' . ClientUrls::MAIN), $urls->callback(), ['me' => $me]),
             'S220'            => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(), ['me' => $urls->strangerProfile()]),
+            'S221'            => AuthorizationAttempt::build($step, $cancel, $main, $urls->callback(), ['code_challenge' => null, 'me' => $me]),
+            'S222'            => AuthorizationAttempt::build($step, $cancel, $main, $urls->callback(), ['code_challenge_method' => null, 'me' => $me]),
             'c2', 'c2b', 'c7' => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(true), ['scope' => 'profile', 'me' => $me]),
             'c3', 'c3b', 'c4', 'c5', 'c8', 'c6', 'S304' => AuthorizationAttempt::build($step, $approve, $main, $urls->callback(), ['me' => $me]),
         };

@@ -20,15 +20,21 @@ use RuntimeException;
  */
 final class RedisStore
 {
+    /**
+     * @param (Closure(): Redis)|null $reopen How to make a fresh connection when
+     *                                        this one has gone stale; null for a
+     *                                        client that cannot be replaced.
+     */
     public function __construct(
-        private readonly Redis $client,
+        private Redis $client,
         private readonly string $prefix = 'mia:',
+        private readonly ?Closure $reopen = null,
     ) {
     }
 
     public static function connect(string $host, int $port, int $db = 0, string $prefix = 'mia:'): self
     {
-        try {
+        $open = static function () use ($host, $port, $db): Redis {
             $client = new Redis();
             $client->connect($host, $port, 2.0);
             $client->setOption(Redis::OPT_READ_TIMEOUT, 2.0);
@@ -37,11 +43,17 @@ final class RedisStore
             if ($db !== 0) {
                 $client->select($db);
             }
+
+            return $client;
+        };
+
+        try {
+            $client = $open();
         } catch (RedisException $e) {
             throw new StorageUnavailableException('Could not connect to Redis: ' . $e->getMessage(), $e);
         }
 
-        return new self($client, $prefix);
+        return new self($client, $prefix, $open);
     }
 
     public function get(string $key): ?string
@@ -199,8 +211,29 @@ final class RedisStore
         try {
             return $command();
         } catch (RedisException $e) {
-            throw new StorageUnavailableException('Redis command failed: ' . $e->getMessage(), $e);
+            if ($this->reopen === null || !self::isStaleConnection($e)) {
+                throw new StorageUnavailableException('Redis command failed: ' . $e->getMessage(), $e);
+            }
         }
+
+        // The connection went stale — a read timed out, or the server closed
+        // it while this process sat idle — which is not the same as Redis
+        // being down. One fresh connection and one more try; a second failure
+        // is reported as the outage it then is. The command closures read
+        // $this->client when they run, so the retry uses the new one.
+        try {
+            $this->client = ($this->reopen)();
+
+            return $command();
+        } catch (RedisException $e) {
+            throw new StorageUnavailableException('Redis command failed after reconnecting: ' . $e->getMessage(), $e);
+        }
+    }
+
+    /** The errors phpredis reports for a connection that has gone bad, as opposed to a refused one. */
+    private static function isStaleConnection(RedisException $e): bool
+    {
+        return preg_match('/read error on connection|went away|not connected|connection lost|broken pipe|reset by peer/i', $e->getMessage()) === 1;
     }
 
     /** @param array<string, mixed> $value */

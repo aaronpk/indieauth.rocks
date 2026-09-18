@@ -139,7 +139,10 @@ final class ServerRunnerTest extends AppTestCase
         yield 'accepts unregistered redirect' => ['acceptsUnregisteredRedirect', ['S208', 'S210', 'S211', 'S212']];
         yield 'prefix matching'               => ['prefixMatch', ['S210']];
         yield 'trusts mismatched metadata'    => ['ignoresMetadataMismatch', ['S212']];
-        yield 'no PKCE check'                 => ['noPkceCheck', ['S215', 'S216']];
+        yield 'no PKCE check'                 => ['noPkceCheck', ['S215', 'S216', 'S221', 'S222']];
+        yield 'method without a challenge'    => ['methodWithoutChallenge', ['S221']];
+        yield 'missing method means plain'    => ['defaultsToPlain', ['S222']];
+        yield 'no well-known metadata'        => ['noWellKnown', ['S117']];
         yield 'reusable codes'                => ['reusableCodes', ['S302']];
         yield 'tokens without scope'          => ['tokenForScopeless', ['S321']];
         yield 'no no-store'                   => ['noNoStore', ['S406', 'S501']];

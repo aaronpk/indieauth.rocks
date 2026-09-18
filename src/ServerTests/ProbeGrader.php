@@ -8,7 +8,7 @@ use IndieAuthRocks\Engine\Catalog;
 use IndieAuthRocks\Engine\Verdict;
 
 /**
- * The browser checks S207–S220: deliberately wrong (or deliberately
+ * The browser checks S207–S222: deliberately wrong (or deliberately
  * cancelled) authorization requests, graded from where the browser ended up
  * or from what the person says they saw.
  */
@@ -18,9 +18,9 @@ final class ProbeGrader
     public const UNREGISTERED = ['S208', 'S210', 'S211', 'S212', 'S213', 'S214'];
 
     /** Requests the server should refuse for other reasons. */
-    public const INVALID = ['S215', 'S216', 'S217', 'S218', 'S219'];
+    public const INVALID = ['S215', 'S216', 'S217', 'S218', 'S219', 'S221', 'S222'];
 
-    public const ALL = ['S207', 'S208', 'S209', 'S210', 'S211', 'S212', 'S213', 'S214', 'S215', 'S216', 'S217', 'S218', 'S219', 'S220'];
+    public const ALL = ['S207', 'S208', 'S209', 'S210', 'S211', 'S212', 'S213', 'S214', 'S215', 'S216', 'S217', 'S218', 'S219', 'S220', 'S221', 'S222'];
 
     public static function question(string $testId, string $altHost): Question
     {

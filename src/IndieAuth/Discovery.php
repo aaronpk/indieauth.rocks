@@ -96,7 +96,7 @@ final class Discovery
 
         $metadata = $response->status === 200 ? $response->json() : null;
 
-        return self::with(
+        $result = self::with(
             $result,
             metadataResponse: $response,
             metadata:         $metadata,
@@ -106,6 +106,29 @@ final class Discovery
                     : 'The metadata is not a JSON object.')
                 : null,
         );
+
+        // A client that starts from the issuer rather than a profile page
+        // looks for the document at the RFC 8414 location. Fetched to see
+        // whether it is there and says the same thing.
+        $issuer    = is_string($metadata['issuer'] ?? null) ? $metadata['issuer'] : null;
+        $wellKnown = $issuer === null ? null : DiscoveryResult::wellKnownUrlFor($issuer);
+
+        if ($wellKnown === null) {
+            return $result;
+        }
+
+        try {
+            $wellKnownResponse = $this->http->send(HttpRequest::get($wellKnown, 'application/json'));
+        } catch (FetchException) {
+            return self::with($result, wellKnownUrl: $wellKnown);
+        }
+
+        return self::with(
+            $result,
+            wellKnownUrl:      $wellKnown,
+            wellKnownResponse: $wellKnownResponse,
+            wellKnownMetadata: $wellKnownResponse->status === 200 ? $wellKnownResponse->json() : null,
+        );
     }
 
     private static function with(
@@ -113,11 +136,15 @@ final class Discovery
         ?\IndieAuthRocks\Fetch\FetchResult $metadataResponse = null,
         ?array $metadata = null,
         ?string $metadataError = null,
+        ?string $wellKnownUrl = null,
+        ?\IndieAuthRocks\Fetch\FetchResult $wellKnownResponse = null,
+        ?array $wellKnownMetadata = null,
     ): DiscoveryResult {
         return new DiscoveryResult(
             $r->profileUrl, $r->profile, $r->profileError, $r->redirects, $r->headerMetadata, $r->htmlMetadata,
             $r->legacyAuthorizationEndpoint, $r->legacyTokenEndpoint, $r->metadataUrl,
-            $metadataResponse, $metadataError, $metadata,
+            $metadataResponse ?? $r->metadataResponse, $metadataError ?? $r->metadataError, $metadata ?? $r->metadata,
+            $wellKnownUrl ?? $r->wellKnownUrl, $wellKnownResponse ?? $r->wellKnownResponse, $wellKnownMetadata ?? $r->wellKnownMetadata,
         );
     }
 }

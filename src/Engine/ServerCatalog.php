@@ -98,6 +98,9 @@ final class ServerCatalog
         $add('S116', self::DISCOVERY, 'Endpoints use https', Level::MUST, Mode::AUTO, 'RFC 6749 §3.1, §3.2',
             'Checks every endpoint URL in the metadata.',
             'All endpoints are https URLs.', ['S104']);
+        $add('S117', self::DISCOVERY, 'Serves metadata at the RFC 8414 well-known URL', Level::SHOULD, Mode::AUTO, 'RFC 8414 §3',
+            'Derives the well-known URL from the issuer — /.well-known/oauth-authorization-server inserted between the host and the issuer\'s path — and fetches it.',
+            'The document is served there and names the same issuer. Not serving it is a warning: a client that starts from the issuer rather than from a profile page cannot find the metadata.', ['S105']);
 
         // ------------------------------------------------------------ 200s
 
@@ -161,6 +164,12 @@ final class ServerCatalog
         $add('S220', self::AUTHORIZATION, 'Does not trust the me parameter', Level::MUST, Mode::PROBE, '§5.2',
             'Sends me= set to someone else\'s profile URL.',
             'Your server either refuses, or signs you in as yourself. Returning the requested me without verifying it is a failure.', ['S106']);
+        $add('S221', self::AUTHORIZATION, 'Refuses a PKCE method without a challenge', Level::SHOULD, Mode::PROBE, '§5.2, RFC 7636 §4.3',
+            'Sends code_challenge_method=S256 with no code_challenge. A server that still allows older clients to sign in without PKCE can mistake this for one of them, and a challenge stripped from a real client\'s request leaves a code anyone can redeem.',
+            'Your server refuses the request.', ['S106']);
+        $add('S222', self::AUTHORIZATION, 'Refuses a challenge without a method', Level::SHOULD, Mode::PROBE, 'RFC 7636 §4.3, RFC 9700 §2.1.1',
+            'Sends code_challenge with no code_challenge_method. RFC 7636 says a missing method means plain, which is not allowed here.',
+            'Your server refuses the request, unless it advertises plain support.', ['S109']);
 
         // ------------------------------------------------------------ 300s
 

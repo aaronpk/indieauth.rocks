@@ -81,6 +81,10 @@ final class FakeIndieAuthServer
 
         $http->json(self::BASE . 'metadata', $metadata);
 
+        if (!isset($this->defects['noWellKnown'])) {
+            $http->json(self::BASE . '.well-known/oauth-authorization-server', $metadata);
+        }
+
         $http->handle(self::BASE . 'token', fn (HttpRequest $r): FetchResult => $this->token($r));
         $http->handle(self::BASE . 'auth', fn (HttpRequest $r): FetchResult => $this->authEndpoint($r));
         $http->handle(self::BASE . 'revoke', fn (HttpRequest $r): FetchResult => $this->revoke($r));
@@ -149,7 +153,15 @@ final class FakeIndieAuthServer
         $challenge = $params['code_challenge'] ?? null;
         $method    = $params['code_challenge_method'] ?? null;
 
-        if (!isset($this->defects['noPkceCheck']) && ($challenge === null || $method !== 'S256')) {
+        // The PKCE mistakes S215, S216, S221 and S222 look for, each its own defect.
+        $pkceOk = match (true) {
+            isset($this->defects['noPkceCheck'])                                          => true,
+            $challenge === null && $method !== null && isset($this->defects['methodWithoutChallenge']) => true,
+            $challenge !== null && $method === null && isset($this->defects['defaultsToPlain'])        => true,
+            default                                                                       => $challenge !== null && $method === 'S256',
+        };
+
+        if (!$pkceOk) {
             return $redirect(['error' => 'invalid_request', 'error_description' => 'PKCE with S256 is required']);
         }
 

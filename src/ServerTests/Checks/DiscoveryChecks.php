@@ -8,7 +8,7 @@ use IndieAuthRocks\Engine\Verdict;
 use IndieAuthRocks\IndieAuth\DiscoveryResult;
 use IndieAuthRocks\IndieAuth\ProfileUrl;
 
-/** Grades S101–S116 from a discovery result. No requests are made here. */
+/** Grades S101–S117 from a discovery result. No requests are made here. */
 final class DiscoveryChecks
 {
     private const ENDPOINT_KEYS = [
@@ -66,7 +66,7 @@ final class DiscoveryChecks
         }
 
         if ($d->metadata === null) {
-            foreach (['S105', 'S106', 'S107', 'S108', 'S109', 'S110', 'S111', 'S112', 'S113', 'S114', 'S115', 'S116'] as $id) {
+            foreach (['S105', 'S106', 'S107', 'S108', 'S109', 'S110', 'S111', 'S112', 'S113', 'S114', 'S115', 'S116', 'S117'] as $id) {
                 $verdicts[] = Verdict::skipped($id, 'No metadata document to check.');
             }
 
@@ -172,6 +172,18 @@ final class DiscoveryChecks
             }
         }
         $verdicts[] = Verdict::check('S116', $insecure === [], 'All endpoints use https.', 'Not https: ' . implode(', ', $insecure) . '.');
+
+        // S117
+        $wellKnownIssuer = $d->wellKnownMetadata['issuer'] ?? null;
+
+        $verdicts[] = match (true) {
+            $d->wellKnownUrl === null              => Verdict::skipped('S117', 'No issuer to derive the well-known URL from.'),
+            $d->wellKnownResponse === null         => Verdict::warning('S117', sprintf('%s could not be fetched.', $d->wellKnownUrl)),
+            $d->wellKnownResponse->status !== 200  => Verdict::warning('S117', sprintf('%s returned HTTP %d. A client that starts from the issuer, as RFC 8414 clients do, cannot find the metadata.', $d->wellKnownUrl, $d->wellKnownResponse->status)),
+            $d->wellKnownMetadata === null         => Verdict::fail('S117', sprintf('%s is not a JSON object.', $d->wellKnownUrl)),
+            $wellKnownIssuer !== $issuer           => Verdict::fail('S117', sprintf('%s says the issuer is %s, but the linked metadata says %s.', $d->wellKnownUrl, is_string($wellKnownIssuer) ? $wellKnownIssuer : '(none)', (string) $issuer)),
+            default                                => Verdict::pass('S117', sprintf('Served at %s with the same issuer.', $d->wellKnownUrl)),
+        };
 
         return $verdicts;
     }

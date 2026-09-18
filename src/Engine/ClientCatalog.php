@@ -76,6 +76,9 @@ final class ClientCatalog
         $add('C111', self::DISCOVERY, 'Accepts a URL typed without a scheme', Level::MAY, Mode::SIGNIN, '§3.4',
             'Type the profile URL without https://.',
             'Your client turns it into a valid URL and signs in. Clients that require a full URL are noted.');
+        $add('C112', self::DISCOVERY, 'Ignores a metadata link in the page body', Level::SHOULD, Mode::SIGNIN, '§4.1',
+            'The real link is in <head>. A second indieauth-metadata link, pointing at a decoy server, is in the page body — where comments, bios and other people\'s content end up on many sites.',
+            'Your client uses the link from <head> and never touches the decoy. Reading links from the body lets anyone who can put HTML on a page choose its server.');
 
         // ------------------------------------------------------------ 200s
 

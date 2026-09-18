@@ -28,7 +28,30 @@ final class DiscoveryResult
         public readonly ?FetchResult $metadataResponse = null,
         public readonly ?string $metadataError = null,
         public readonly ?array $metadata = null,
+        /** The RFC 8414 location derived from the issuer, when there was one to derive from. */
+        public readonly ?string $wellKnownUrl = null,
+        public readonly ?FetchResult $wellKnownResponse = null,
+        /** @var array<string, mixed>|null */
+        public readonly ?array $wellKnownMetadata = null,
     ) {
+    }
+
+    /**
+     * Where RFC 8414 §3.1 says an issuer's metadata lives: the well-known
+     * segment inserted between the host and the issuer's path.
+     */
+    public static function wellKnownUrlFor(string $issuer): ?string
+    {
+        $parts = parse_url($issuer);
+
+        if (!is_array($parts) || !isset($parts['scheme'], $parts['host']) || isset($parts['query']) || isset($parts['fragment'])) {
+            return null;
+        }
+
+        $path = $parts['path'] ?? '';
+
+        return $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '')
+            . '/.well-known/oauth-authorization-server' . ($path === '/' ? '' : $path);
     }
 
     public function finalUrl(): string
@@ -80,6 +103,8 @@ final class DiscoveryResult
             'metadata_cors'                 => $this->metadataResponse?->header('access-control-allow-origin'),
             'metadata_error'                => $this->metadataError,
             'metadata'                      => $this->metadata,
+            'well_known_url'                => $this->wellKnownUrl,
+            'well_known_status'             => $this->wellKnownResponse?->status,
         ];
     }
 }

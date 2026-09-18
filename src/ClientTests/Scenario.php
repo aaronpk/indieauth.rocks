@@ -11,7 +11,7 @@ final class Scenario
 {
     /** Tests a person runs by signing in to their client with a profile URL. */
     public const SIGNIN_TESTS = [
-        101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111,
+        101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112,
         301, 302, 303, 304, 305, 306, 307,
         402, 403, 404, 405, 406, 407, 408, 409,
         502,
@@ -35,6 +35,8 @@ final class Scenario
         public readonly ?bool $legacyLinks = null,
         /** The profile URL redirects before reaching the page with the links. */
         public readonly bool $redirects = false,
+        /** A decoy indieauth-metadata link in the page body, where injected content lands. */
+        public readonly bool $bodyLink = false,
         /** normal, wrong_state, no_iss, wrong_iss, near_iss, error */
         public readonly string $authorizationResponse = 'normal',
         /** normal, me_same_domain, me_other_server, me_other_domain, me_final, no_me, invalid_me, spoofed_profile, invalid_grant, expiring */
@@ -53,6 +55,7 @@ final class Scenario
             107     => new self($n, null, [true], multiRel: true),
             108     => new self($n, null, [], legacyLinks: true),
             109     => new self($n, null, [true], legacyLinks: false),
+            112     => new self($n, null, [true], bodyLink: true),
             301     => new self($n, null, [true], authorizationResponse: 'wrong_state'),
             302     => new self($n, null, [true], authorizationResponse: 'no_iss'),
             303     => new self($n, null, [true], authorizationResponse: 'wrong_iss'),

@@ -55,6 +55,30 @@ final class LinkRelParserTest extends TestCase
         $this->assertSame(['https://header.example/', 'https://html.example/'], LinkRelParser::find($page, 'indieauth-metadata'));
     }
 
+    public function test_a_link_in_the_body_only_counts_when_asked_for(): void
+    {
+        $html = <<<'HTML'
+            <!doctype html><html><head><title>t</title>
+            <link rel="indieauth-metadata" href="/meta">
+            </head><body>
+            <p>A comment somebody left:</p>
+            <link rel="indieauth-metadata" href="https://attacker.example/meta">
+            </body></html>
+            HTML;
+
+        $this->assertSame(['https://example.com/meta'], LinkRelParser::fromHtml($html, 'https://example.com/', 'indieauth-metadata'));
+        $this->assertSame(
+            ['https://example.com/meta', 'https://attacker.example/meta'],
+            LinkRelParser::fromHtml($html, 'https://example.com/', 'indieauth-metadata', headOnly: false),
+        );
+
+        // A page with no <head> written out still gets its leading links parsed into one.
+        $this->assertSame(
+            ['https://example.com/meta'],
+            LinkRelParser::fromHtml('<link rel="indieauth-metadata" href="/meta"><p>hi</p>', 'https://example.com/', 'indieauth-metadata'),
+        );
+    }
+
     public function test_ignores_html_in_non_html_responses(): void
     {
         $page = new FetchResult('https://example.com/', 200, '<link rel="indieauth-metadata" href="/x">', ['content-type' => ['application/json']]);

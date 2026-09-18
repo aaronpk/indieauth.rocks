@@ -201,6 +201,10 @@ final class FakeIndieAuthClient
             $metadataUrl = UrlResolver::resolve($page->url, $href);
         } elseif (isset($this->defects['naiveRelative']) && preg_match('/rel="[^"]*indieauth-metadata[^"]*" href="([^"]+)"/', $page->body, $m) === 1 && !str_contains($m[1], '://')) {
             $metadataUrl = rtrim($page->url, '/') . '/' . $m[1];
+        } elseif (isset($this->defects['bodyLinks'])) {
+            // Walks every <link> in the document and lets the last one win.
+            $all         = LinkRelParser::fromHtml($page->body, $page->url, 'indieauth-metadata', headOnly: false);
+            $metadataUrl = $all === [] ? null : $all[count($all) - 1];
         } else {
             $metadataUrl = LinkRelParser::fromHtml($page->body, $page->url, 'indieauth-metadata')[0] ?? null;
         }

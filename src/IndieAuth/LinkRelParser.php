@@ -16,7 +16,7 @@ use IndieAuthRocks\Fetch\UrlResolver;
 final class LinkRelParser
 {
     /** @return list<string> */
-    public static function find(FetchResult $page, string $rel): array
+    public static function find(FetchResult $page, string $rel, bool $headOnly = true): array
     {
         $found = [];
 
@@ -31,7 +31,7 @@ final class LinkRelParser
 
         $type = $page->contentType();
         if ($type === 'text/html' || $type === 'application/xhtml+xml' || $type === '') {
-            foreach (self::fromHtml($page->body, $page->url, $rel) as $url) {
+            foreach (self::fromHtml($page->body, $page->url, $rel, $headOnly) as $url) {
                 $found[] = $url;
             }
         }
@@ -68,8 +68,19 @@ final class LinkRelParser
         return $hrefs;
     }
 
-    /** @return list<string> */
-    public static function fromHtml(string $html, string $baseUrl, string $rel): array
+    /**
+     * Only a <link> inside <head> counts. A link in the body is where injected
+     * content lands — a comment, a bio, a reflected search term — and for
+     * indieauth-metadata that link decides which server speaks for the site.
+     * The head, like the HTTP headers, is the part of a page only its
+     * operator writes.
+     *
+     * @param bool $headOnly False to read body links too, for saying where a
+     *                       misplaced tag is.
+     *
+     * @return list<string>
+     */
+    public static function fromHtml(string $html, string $baseUrl, string $rel, bool $headOnly = true): array
     {
         if (trim($html) === '') {
             return [];
@@ -96,6 +107,10 @@ final class LinkRelParser
                 continue;
             }
 
+            if ($headOnly && !self::inHead($element)) {
+                continue;
+            }
+
             $rels = preg_split('/\s+/', strtolower(trim($element->getAttribute('rel')))) ?: [];
 
             if (in_array(strtolower($rel), $rels, true)) {
@@ -107,5 +122,20 @@ final class LinkRelParser
         }
 
         return $found;
+    }
+
+    /**
+     * Whether an element sits under <head>. libxml leaves a <link> where it
+     * found it rather than hoisting it, so a body link really is in the body.
+     */
+    private static function inHead(DOMElement $element): bool
+    {
+        for ($node = $element->parentNode; $node instanceof DOMElement; $node = $node->parentNode) {
+            if (strtolower($node->tagName) === 'head') {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

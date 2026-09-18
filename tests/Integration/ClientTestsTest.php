@@ -119,13 +119,13 @@ final class ClientTestsTest extends AppTestCase
     {
         $client = $this->client();
 
-        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
+        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 112, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
             $this->play($client, $n);
         }
 
         $outcomes = $this->outcomes();
 
-        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
+        foreach ([101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 112, 301, 302, 303, 304, 305, 402, 403, 404, 405, 406, 407, 408, 409] as $n) {
             $this->assertSame('pass', $outcomes['C' . $n] ?? 'missing', 'C' . $n);
         }
 
@@ -143,6 +143,7 @@ final class ClientTestsTest extends AppTestCase
         yield 'ignores Link headers'   => ['headerIgnored', [102, 103], ['C102', 'C103']];
         yield 'joins relative URLs'    => ['naiveRelative', [105], ['C105']];
         yield 'no PKCE'                => ['noPkce', [101], ['C101', 'C205']];
+        yield 'reads body links'       => ['bodyLinks', [112], ['C112']];
     }
 
     /**

@@ -38,7 +38,8 @@ final class DiscoveryResult
 
     /**
      * Where RFC 8414 §3.1 says an issuer's metadata lives: the well-known
-     * segment inserted between the host and the issuer's path.
+     * segment inserted between the host and the issuer's path, after any
+     * terminating slash is removed from that path.
      */
     public static function wellKnownUrlFor(string $issuer): ?string
     {
@@ -48,10 +49,10 @@ final class DiscoveryResult
             return null;
         }
 
-        $path = $parts['path'] ?? '';
+        $path = rtrim($parts['path'] ?? '', '/');
 
         return $parts['scheme'] . '://' . $parts['host'] . (isset($parts['port']) ? ':' . $parts['port'] : '')
-            . '/.well-known/oauth-authorization-server' . ($path === '/' ? '' : $path);
+            . '/.well-known/oauth-authorization-server' . $path;
     }
 
     public function finalUrl(): string

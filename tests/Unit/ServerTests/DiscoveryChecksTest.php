@@ -29,14 +29,14 @@ final class DiscoveryChecksTest extends TestCase
         $issuer = 'https://auth.example/s/abc/';
 
         $this->assertSame(Outcome::PASS, $this->s105($issuer, 'https://auth.example/s/abc/metadata')->outcome);
-        $this->assertSame(Outcome::PASS, $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/abc/')->outcome);
+        $this->assertSame(Outcome::PASS, $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/abc')->outcome);
         $this->assertSame(Outcome::PASS, $this->s105('https://auth.example/', 'https://auth.example/.well-known/oauth-authorization-server')->outcome);
 
-        $other = $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/xyz/');
+        $other = $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/xyz');
         $this->assertSame(Outcome::FAIL, $other->outcome);
         $this->assertStringContainsString('neither a prefix', $other->summary);
 
-        $this->assertSame(Outcome::FAIL, $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/abc')->outcome, 'the derived URL keeps the trailing slash');
+        $this->assertSame(Outcome::FAIL, $this->s105($issuer, 'https://auth.example/.well-known/oauth-authorization-server/s/abc/')->outcome, 'RFC 8414 drops the terminating slash, so the derived URL has none');
         $this->assertSame(Outcome::FAIL, $this->s105('http://auth.example/s/abc/', 'http://auth.example/s/abc/metadata')->outcome, 'https is still required');
     }
 

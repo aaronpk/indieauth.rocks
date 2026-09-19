@@ -49,18 +49,18 @@ final class DiscoveryTest extends TestCase
     public function test_derives_and_fetches_the_well_known_url(): void
     {
         $this->assertSame('https://auth.example/.well-known/oauth-authorization-server', DiscoveryResult::wellKnownUrlFor('https://auth.example/'));
-        $this->assertSame('https://auth.example/.well-known/oauth-authorization-server/s/abc/', DiscoveryResult::wellKnownUrlFor('https://auth.example/s/abc/'));
+        $this->assertSame('https://auth.example/.well-known/oauth-authorization-server/s/abc', DiscoveryResult::wellKnownUrlFor('https://auth.example/s/abc/'), 'the terminating slash is removed first');
         $this->assertSame('https://auth.example:8443/.well-known/oauth-authorization-server/tenant', DiscoveryResult::wellKnownUrlFor('https://auth.example:8443/tenant'));
         $this->assertNull(DiscoveryResult::wellKnownUrlFor('https://auth.example/?x=1'));
 
         $http = new FakeHttpClient();
         $http->html('https://me.example/', '<link rel="indieauth-metadata" href="https://auth.example/s/abc/metadata">');
         $http->json('https://auth.example/s/abc/metadata', ['issuer' => 'https://auth.example/s/abc/'] + self::METADATA);
-        $http->json('https://auth.example/.well-known/oauth-authorization-server/s/abc/', ['issuer' => 'https://auth.example/s/abc/'] + self::METADATA);
+        $http->json('https://auth.example/.well-known/oauth-authorization-server/s/abc', ['issuer' => 'https://auth.example/s/abc/'] + self::METADATA);
 
         $result = (new Discovery($http))->discover('https://me.example/');
 
-        $this->assertSame('https://auth.example/.well-known/oauth-authorization-server/s/abc/', $result->wellKnownUrl);
+        $this->assertSame('https://auth.example/.well-known/oauth-authorization-server/s/abc', $result->wellKnownUrl);
         $this->assertSame(200, $result->wellKnownResponse?->status);
         $this->assertSame('https://auth.example/s/abc/', $result->wellKnownMetadata['issuer'] ?? null);
         $this->assertSame('https://auth.example/s/abc/metadata', $result->metadataUrl, 'the linked document is still the one used');

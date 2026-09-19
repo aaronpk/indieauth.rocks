@@ -87,8 +87,13 @@ final class DiscoveryChecks
             if (str_contains($issuer, '?') || str_contains($issuer, '#')) {
                 $problems[] = 'it has a query or fragment';
             }
-            if (!str_starts_with((string) $d->metadataUrl, $issuer)) {
-                $problems[] = sprintf('it is not a prefix of the metadata URL %s', $d->metadataUrl);
+            // §4.1.1 wants the issuer to be a prefix of the metadata URL. An
+            // issuer with a path whose metadata lives where RFC 8414 §3.1 puts
+            // it (/.well-known/oauth-authorization-server inserted before the
+            // path) cannot satisfy that literally, and is just as unambiguous.
+            $metadataUrl = (string) $d->metadataUrl;
+            if (!str_starts_with($metadataUrl, $issuer) && $metadataUrl !== DiscoveryResult::wellKnownUrlFor($issuer)) {
+                $problems[] = sprintf('it is neither a prefix of the metadata URL %s nor the issuer that RFC 8414 derives it from', $d->metadataUrl);
             }
 
             $verdicts[] = $problems === []

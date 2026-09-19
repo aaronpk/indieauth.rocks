@@ -84,7 +84,7 @@ final class EnrollCommand
 
         $domainPage = $http->get($base . 'account/domains/' . $m[1])['body'];
 
-        if (preg_match('#(https?://[^"\s<&]+/s/[a-z0-9]{16}/metadata)#', $domainPage, $metadata) !== 1) {
+        if (preg_match('#(https?://[^"\s<&]+/\.well-known/oauth-authorization-server/s/[a-z0-9]{16}/)#', $domainPage, $metadata) !== 1) {
             throw new RuntimeException('Could not find the metadata URL on the domain page.');
         }
 

@@ -64,7 +64,7 @@ final class ServerCatalog
             'Returns HTTP 200 with a JSON object and a JSON content type, without redirecting.', ['S102']);
         $add('S105', self::DISCOVERY, 'Issuer identifier is valid', Level::MUST, Mode::AUTO, '§3.1, §4.1.1',
             'Checks the issuer value in the metadata.',
-            'issuer is an https URL with no query or fragment, and is a prefix of the metadata URL.', ['S104']);
+            'issuer is an https URL with no query or fragment, and either is a prefix of the metadata URL or the metadata URL is its RFC 8414 well-known location.', ['S104']);
         $add('S106', self::DISCOVERY, 'Authorization endpoint is listed', Level::MUST, Mode::AUTO, '§4.1.1',
             'Checks authorization_endpoint in the metadata.',
             'authorization_endpoint is an absolute URL.', ['S104']);

@@ -165,6 +165,17 @@ final class DiscoveryStepsTest extends TestCase
         $this->assertStringContainsString('PKCE', (string) $step->meaning);
     }
 
+    public function test_a_server_with_no_token_endpoint_is_a_note(): void
+    {
+        $metadata = self::METADATA;
+        unset($metadata['token_endpoint']);
+
+        $step = $this->step(DiscoverySteps::from($this->discovery(metadata: $metadata), 'example.com'), 'endpoints');
+
+        $this->assertSame(StepState::Note, $step->state);
+        $this->assertStringContainsString('do not list a token endpoint', $step->headline);
+    }
+
     public function test_a_server_with_no_authorization_endpoint_stops_the_check(): void
     {
         $metadata = self::METADATA;

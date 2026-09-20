@@ -212,12 +212,12 @@ final class Walkthrough
     /** @return list<Step> */
     private function redeem(Checkup $checkup, string $code, string $verifier): array
     {
-        // A checkup with no scope redeems at the authorization endpoint, which
-        // answers with who you are and issues nothing. Asking to see the token
-        // response is what moves it to the token endpoint.
-        $endpoint = $checkup->wantsToken()
-            ? (string) ($checkup->endpoint('token') ?? $checkup->endpoint('authorization'))
-            : (string) $checkup->endpoint('authorization');
+        // Every code is exchanged at the token endpoint, with or without a
+        // scope: the draft has no separate exchange at the authorization
+        // endpoint any more. A server advertising no token endpoint is met
+        // where its codes used to be redeemed, and the step says so.
+        $endpoint = (string) ($checkup->endpoint('token') ?? $checkup->endpoint('authorization'));
+        $fellBack = $checkup->endpoint('token') === null;
 
         $this->http->context($checkup->run->id, 'redeem');
         $reply = (new TokenClient($this->http))->redeem($endpoint, $code, $this->clientId(), $this->callbackUrl(), $verifier);
@@ -236,7 +236,7 @@ final class Walkthrough
             );
         }
 
-        $steps = RedemptionSteps::from($reply, $endpoint, $checkup->profileUrl(), $checkup->wantsToken(), $verified);
+        $steps = RedemptionSteps::from($reply, $endpoint, $checkup->profileUrl(), $checkup->wantsToken(), $verified, $fellBack);
 
         // Nothing here needs the token afterwards, so hand it back if we can.
         $token = $reply->string('access_token');

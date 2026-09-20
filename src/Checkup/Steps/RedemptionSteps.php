@@ -18,9 +18,15 @@ final class RedemptionSteps
      * @param  array{ok: bool, fetched: bool, reason: string}|null $verified Result of MeVerifier::verify.
      * @return list<Step>
      */
-    public static function from(Reply $reply, string $endpoint, string $profileUrl, bool $wantedToken, ?array $verified): array
-    {
-        $exchange = self::exchange($reply, $endpoint, $wantedToken);
+    public static function from(
+        Reply $reply,
+        string $endpoint,
+        string $profileUrl,
+        bool $wantedToken,
+        ?array $verified,
+        bool $noTokenEndpoint = false,
+    ): array {
+        $exchange = self::exchange($reply, $endpoint, $wantedToken, $noTokenEndpoint);
         $steps    = [$exchange];
 
         if ($exchange->state->stopsTheLogin()) {
@@ -32,7 +38,7 @@ final class RedemptionSteps
         return $steps;
     }
 
-    private static function exchange(Reply $reply, string $endpoint, bool $wantedToken): Step
+    private static function exchange(Reply $reply, string $endpoint, bool $wantedToken, bool $noTokenEndpoint): Step
     {
         $title = 'Exchanging the code for your identity';
         $urls  = [$endpoint];
@@ -115,6 +121,15 @@ final class RedemptionSteps
         ]);
 
         $notes = [];
+
+        // Codes are exchanged at the token endpoint now. A server with none
+        // advertised was met at its authorization endpoint instead, which is
+        // where the older specification put this exchange.
+        if ($noTokenEndpoint) {
+            $notes[] = 'Your server does not advertise a token endpoint, so the code was exchanged at its '
+                . 'authorization endpoint, which is where the older specification put this. Apps written to the '
+                . 'current one will look for a token endpoint and find none.';
+        }
 
         if ($wantedToken && $token !== null) {
             if ($reply->string('token_type') === null) {

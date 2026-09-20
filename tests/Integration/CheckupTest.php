@@ -144,6 +144,23 @@ final class CheckupTest extends AppTestCase
         $this->assertSame(403, $this->request('GET', self::BASE . ltrim($location, '/') . '/go')->status);
     }
 
+    /**
+     * The draft exchanges every code at the token endpoint. Without a scope it
+     * answers with who you are and issues nothing, but it is still where the
+     * exchange happens.
+     */
+    public function test_the_code_is_exchanged_at_the_token_endpoint(): void
+    {
+        $page = $this->walk($this->server());
+
+        $this->assertStringContainsString(FakeIndieAuthServer::BASE . 'token', $page->body);
+        $this->assertStringNotContainsString(
+            'POST</code> ' . FakeIndieAuthServer::BASE . 'auth',
+            $page->body,
+            'nothing should be posted to the authorization endpoint',
+        );
+    }
+
     public function test_secrets_are_hidden_from_the_page(): void
     {
         $server = $this->server();

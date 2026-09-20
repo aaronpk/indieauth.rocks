@@ -75,6 +75,24 @@ final class RedemptionStepsTest extends TestCase
         $this->assertStringContainsString('no-store', (string) $step->meaning);
     }
 
+    /** The draft exchanges every code at the token endpoint, with or without a scope. */
+    public function test_a_server_with_no_token_endpoint_is_told_so(): void
+    {
+        $steps = RedemptionSteps::from(
+            $this->reply(200, ['me' => self::ME]),
+            'https://server.example/auth',
+            self::ME,
+            false,
+            null,
+            noTokenEndpoint: true,
+        );
+        $step = $this->step($steps, 'redeem');
+
+        $this->assertSame(StepState::Note, $step->state);
+        $this->assertStringContainsString('does not advertise a token endpoint', (string) $step->meaning);
+        $this->assertStringContainsString('authorization endpoint', (string) $step->meaning);
+    }
+
     public function test_a_different_but_verified_me_says_which_address_to_use(): void
     {
         $steps = $this->from(

@@ -410,6 +410,22 @@ final class DiscoverySteps
             );
         }
 
+        // Every code is exchanged at the token endpoint, so a server without
+        // one leaves an app with nowhere to finish a login.
+        if ($d->metadata !== null && $token === null) {
+            return new Step(
+                id: 'endpoints',
+                title: $title,
+                state: StepState::Note,
+                headline: 'Your server\'s settings do not list a token endpoint.',
+                facts: $facts,
+                meaning: 'That is where an app exchanges its one-time code for an answer to "who is this?". Older '
+                    . 'servers did that at the authorization endpoint instead, and apps written for them will '
+                    . 'still work, but apps following the current specification look for a token endpoint.',
+                fix: 'Ask whoever runs your server to publish a token_endpoint in its settings document.',
+            );
+        }
+
         if ($d->metadata !== null && (!is_array($methods) || !in_array('S256', array_map('strval', $methods), true))) {
             return new Step(
                 id: 'endpoints',

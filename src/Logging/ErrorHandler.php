@@ -72,7 +72,7 @@ final class ErrorHandler
             $log->exception($e);
 
             if ($web) {
-                self::emitFailurePage($e, $log, $debug);
+                self::emitFailurePage($e, $debug);
             } elseif ($debug) {
                 fwrite(STDERR, $e::class . ': ' . $e->getMessage() . "\n");
             }
@@ -93,9 +93,11 @@ final class ErrorHandler
             if ($web && !headers_sent()) {
                 http_response_code(500);
                 header('Content-Type: text/plain; charset=utf-8');
+                // Only the operator's own log knows where the details went:
+                // naming the file tells a visitor about the server's insides.
                 echo $debug
                     ? sprintf("Fatal error: %s at %s:%d\n", $error['message'], $error['file'], $error['line'])
-                    : "Something went wrong. See " . $log->path() . "\n";
+                    : "Something went wrong.\n";
             }
         });
     }
@@ -106,7 +108,7 @@ final class ErrorHandler
      * Deliberately plain text with no templating: whatever just failed may well
      * be the thing the template renderer needs.
      */
-    private static function emitFailurePage(Throwable $e, ErrorLog $log, bool $debug): void
+    private static function emitFailurePage(Throwable $e, bool $debug): void
     {
         if (headers_sent()) {
             return;
@@ -121,7 +123,7 @@ final class ErrorHandler
             return;
         }
 
-        printf("The server could not handle this request.\n\nDetails were written to:\n  %s\n", $log->path());
+        echo "The server could not handle this request.\n";
     }
 
     private static function severityLabel(int $severity): string

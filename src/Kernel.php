@@ -108,7 +108,6 @@ final class Kernel
                 'status'     => $status,
                 'message'    => $message,
                 'request_id' => $requestId,
-                'log_path'   => $this->debug ? $this->log->path() : null,
             ]);
 
             return Response::html($body, $status);

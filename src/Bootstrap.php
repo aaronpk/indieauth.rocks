@@ -267,6 +267,7 @@ final class Bootstrap
         $router->post('/runs/{run}/answer', [ServerRunController::class, 'answer']);
         $router->post('/runs/{run}/skip', [ServerRunController::class, 'skip']);
         $router->post('/runs/{run}/resume', [ServerRunController::class, 'resume']);
+        $router->post('/runs/{run}/restart', [ServerRunController::class, 'restart']);
         $router->get('/runs/{run}/tests/{test}', [ServerRunController::class, 'transcript']);
         $router->post('/runs/{run}/tests/{test}/rerun', [ServerRunController::class, 'rerun']);
 

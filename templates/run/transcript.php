@@ -4,8 +4,7 @@
  * @var array<string, mixed> $test
  * @var string $outcome
  * @var string $summary
- * @var string|null $rerun_reason
- * @var string $rerun_hint
+ * @var array<string, mixed> $options What can be done about this test now.
  * @var string $csrf
  * @var string|null $notice
  * @var list<array<string, mixed>> $exchanges
@@ -14,7 +13,7 @@
  */
 ?>
 <div class="page-header">
-    <p class="eyebrow"><a href="/runs/<?= $run_id ?>">Server test run</a> · <?= $test['section'] ?></p>
+    <p class="eyebrow"><a href="/runs/<?= $run_id ?>">Server test run</a> · <?= $test['section'] ?><?php if ($options['kind'] === 'continue') { ?> · <a href="/runs/<?= $run_id ?>/step">the step in progress</a><?php } ?></p>
     <h1><span class="test-number"><?= $test['id'] ?></span> <?= $test['title'] ?></h1>
     <p><span class="badge outcome-<?= $outcome ?>"><?= $outcome ?></span> <?= $summary ?></p>
 </div>
@@ -28,14 +27,23 @@
     <p class="muted"><strong>Passes when:</strong> <?= $test['passes'] ?></p>
     <p class="small"><a href="<?= $test['spec_url'] ?>"><?= $test['spec'] ?></a> · <a href="/tests/<?= $test['id'] ?>">About this test</a></p>
 
-    <?php if ($rerun_reason === null) { ?>
+    <?php if ($options['kind'] === 'run') { ?>
         <form method="post" action="/runs/<?= $run_id ?>/tests/<?= $test['id'] ?>/rerun" class="stack">
             <input type="hidden" name="_csrf" value="<?= $csrf ?>">
-            <div><button type="submit" class="button">Run this test again</button></div>
-            <p class="hint"><?= $rerun_hint ?></p>
+            <div><button type="submit" class="button"><?= $options['label'] ?></button></div>
+            <p class="hint"><?= $options['hint'] ?></p>
         </form>
+    <?php } elseif ($options['kind'] === 'continue') { ?>
+        <p class="hint"><?= $options['hint'] ?></p>
+        <p><a class="button" href="/runs/<?= $run_id ?>/step"><?= $options['label'] ?></a></p>
+        <?php if ($options['restartable']) { ?>
+            <form method="post" action="/runs/<?= $run_id ?>/restart">
+                <input type="hidden" name="_csrf" value="<?= $csrf ?>">
+                <button type="submit" class="link-button small">Start this step again</button>
+            </form>
+        <?php } ?>
     <?php } else { ?>
-        <p class="muted small"><?= $rerun_reason ?></p>
+        <p class="muted small"><?= $options['reason'] ?></p>
     <?php } ?>
 </section>
 

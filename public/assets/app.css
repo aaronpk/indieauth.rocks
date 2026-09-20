@@ -736,3 +736,9 @@ table.results tr.is-next td:first-child { box-shadow: inset 3px 0 0 var(--accent
 /* An address in running text sits tighter than one in a fact list, so the
    sentence's own full stop does not drift away from it. */
 .checkup-step p code, .page-header code { padding-inline: .2em; }
+
+/* The way back into a step someone left and never returned from. */
+.restart-form { margin-top: .75rem; }
+.restart-form .hint { margin: 0; }
+a.badge { text-decoration: none; }
+a.badge:hover { border-color: var(--accent); color: var(--accent); }

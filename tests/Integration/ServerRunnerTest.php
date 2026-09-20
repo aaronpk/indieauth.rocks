@@ -10,6 +10,7 @@ use IndieAuthRocks\Engine\Run;
 use IndieAuthRocks\ServerTests\Action;
 use IndieAuthRocks\ServerTests\ProbeGrader;
 use IndieAuthRocks\ServerTests\ServerRunner;
+use IndieAuthRocks\ServerTests\TestOptions;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
 use IndieAuthRocks\Tests\Support\AppTestCase;
@@ -199,6 +200,72 @@ final class ServerRunnerTest extends AppTestCase
         $this->assertSame('pass', $this->outcomes($this->drive($this->server()))['S320'] ?? 'missing');
     }
 
+    /**
+     * Whatever state a test is in, its page can offer something or say why not.
+     * A silent dead end is what sent someone looking for a button that was not
+     * there, so this guards every id in the catalog at once.
+     */
+    public function test_every_test_offers_an_action_or_a_reason(): void
+    {
+        $this->server();
+        $runner   = $this->container->get(ServerRunner::class);
+        $results  = $this->container->get(ResultRepository::class);
+        $run      = $this->container->get(RunRepository::class)->find($runner->start(FakeIndieAuthServer::ME, 'browser')->id);
+        $recorded = $results->forRun($run->id);
+
+        foreach (Catalog::suite(Catalog::SERVER) as $test) {
+            $options = $runner->optionsFor($run, $test->id, $recorded[$test->id] ?? null);
+
+            if ($options->kind === TestOptions::NONE) {
+                $this->assertNotSame('', (string) $options->reason, $test->id . ' refuses without saying why');
+
+                continue;
+            }
+
+            $this->assertNotSame('', $options->label, $test->id . ' offers an unlabelled action');
+            $this->assertNotNull($options->step, $test->id . ' offers an action with no step');
+        }
+    }
+
+    /** Asking for a test graded by a contingency step offers the step people know. */
+    public function test_a_contingency_step_is_never_the_one_offered(): void
+    {
+        $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $run    = $this->container->get(RunRepository::class)->find($runner->start(FakeIndieAuthServer::ME, 'browser')->id);
+
+        $this->assertSame('c3', $runner->stepFor('S311'), 'S311 is graded by c3; c4 only exists when codes burn');
+        $this->assertSame('c3', $runner->optionsFor($run, 'S311', ['step' => 'c4', 'outcome' => 'pass'])->step);
+        $this->assertSame(TestOptions::RUN, $runner->optionsFor($run, 'S311', ['step' => 'c4', 'outcome' => 'pass'])->kind);
+    }
+
+    public function test_a_stuck_step_can_be_started_again_but_a_waiting_one_cannot(): void
+    {
+        $server = $this->server();
+        $runner = $this->container->get(ServerRunner::class);
+        $runs   = $this->container->get(RunRepository::class);
+        $run    = $runner->start(FakeIndieAuthServer::ME, 'browser');
+
+        $pending = $this->advanceTo($server, $run, 'S208');
+        $run     = $runs->find($run->id);
+
+        // Its own page offers to continue or start over.
+        $options = $runner->optionsFor($run, 'S208', null);
+        $this->assertSame(TestOptions::CONTINUE, $options->kind);
+        $this->assertTrue($options->restartable);
+
+        $this->assertNull($runner->restart($run));
+
+        $run     = $runs->find($run->id);
+        $started = $runner->next($run);
+        $this->assertSame('S208', $started->step);
+        $this->assertNotSame($pending->attemptId, $started->attemptId, 'a new request, not the abandoned one');
+
+        // A landing from the abandoned request no longer counts.
+        $late = $runner->land($runs->find($run->id), self::BASE . 'callback/' . $run->runKey . '?error=access_denied&state=' . rawurlencode($pending->attemptId . '~x'));
+        $this->assertFalse($late['handled']);
+    }
+
     public function test_probe_questions_cover_every_probe(): void
     {
         foreach (ProbeGrader::ALL as $id) {
@@ -339,8 +406,17 @@ final class ServerRunnerTest extends AppTestCase
         $this->assertSame('discovery', $results['S101']['step']);
         $this->assertNull($runner->rerunReason($run, 'S101', $results['S101']));
         $this->assertStringContainsString('every redirect', (string) $runner->rerunReason($run, 'S201', $results['S201']));
-        $this->assertStringContainsString('Start a new run', (string) $runner->rerunReason($run, 'S301', $results['S301']));
-        $this->assertSame('This test has not run yet.', $runner->rerunReason($run, 'S304', null));
+
+        // A test graded inside a step is not refused any more: its step can be
+        // asked for by name, which is what someone wanting it actually needs.
+        $login = $runner->optionsFor($run, 'S301', $results['S301']);
+        $this->assertSame(TestOptions::RUN, $login->kind);
+        $this->assertSame('login', $login->step);
+        $this->assertStringContainsString('needs one approval', $login->hint);
+
+        $slow = $runner->optionsFor($run, 'S304', null);
+        $this->assertSame(TestOptions::RUN, $slow->kind, 'a test that has not run is the one you most want to start');
+        $this->assertSame('S304', $slow->step);
 
         $before = count($exchanges->forStep($run->id, 'discovery'));
         $this->assertSame('The discovery and endpoint checks ran again.', $runner->rerun($run, 'S101'));

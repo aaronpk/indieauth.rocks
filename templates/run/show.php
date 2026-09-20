@@ -81,7 +81,7 @@ $symbols = ['pass' => '✓', 'fail' => '✗', 'warning' => '!', 'skipped' => '�
                             <?php if ($row['summary'] !== '') { ?><span class="result-summary"><?= $row['summary'] ?></span><?php } ?>
                         </td>
                         <td class="test-meta small">
-                            <?php if ($row['next']) { ?><span class="badge"><?= $upcoming['in_progress'] ? 'In progress' : 'Up next' ?></span><?php } ?>
+                            <?php if ($row['next']) { ?><a class="badge" href="/runs/<?= $run['public_id'] ?>/step"><?= $upcoming['in_progress'] ? 'In progress' : 'Up next' ?></a><?php } ?>
                             <?php if ($row['has_log']) { ?><a href="/runs/<?= $run['public_id'] ?>/tests/<?= $row['id'] ?>">HTTP log</a><?php } ?>
                         </td>
                     </tr>

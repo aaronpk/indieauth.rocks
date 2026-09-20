@@ -18,6 +18,7 @@ use IndieAuthRocks\Identity\Guard;
 use IndieAuthRocks\Identity\Visitor;
 use IndieAuthRocks\ServerTests\Action;
 use IndieAuthRocks\ServerTests\ServerRunner;
+use IndieAuthRocks\ServerTests\TestOptions;
 use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\ResultRepository;
@@ -245,6 +246,29 @@ final class ServerRunController extends Controller
         });
     }
 
+    /**
+     * Start the step in progress again, for the person who opened its request
+     * and never came back.
+     *
+     * @param array<string, string> $params
+     */
+    public function restart(Request $request, array $params = []): Response
+    {
+        return $this->ownerAction($request, $params, function (Run $run): ?string {
+            $action  = $this->runner->currentAction($run);
+            $refused = $this->runner->restart($run);
+
+            if ($refused !== null) {
+                return $refused;
+            }
+
+            // Mint the fresh request straight away, so the step page has one.
+            $this->runner->next($this->runs->find($run->id) ?? $run);
+
+            return 'Starting ' . ($action?->title ?? 'that step') . ' again.';
+        });
+    }
+
     /** @param array<string, string> $params */
     public function resume(Request $request, array $params = []): Response
     {
@@ -274,7 +298,7 @@ final class ServerRunController extends Controller
         $flash   = $this->guard->takeFlash($visitor);
         $result  = $this->results->forRun($run->id)[$test->id] ?? null;
         $step    = $result['step'] ?? null;
-        $reason  = $this->runner->rerunReason($run, $test->id, $result);
+        $options = $this->runner->optionsFor($run, $test->id, $result);
 
         $exchanges = $step === null ? [] : ExchangeRows::format($this->exchanges->forTest($run->id, (string) $step, $test->id));
 
@@ -287,10 +311,7 @@ final class ServerRunController extends Controller
             'test'         => $test->toArray(),
             'outcome'      => (string) ($result['outcome'] ?? 'not_run'),
             'summary'      => (string) ($result['summary'] ?? ''),
-            'rerun_reason' => $reason,
-            'rerun_hint'   => $reason !== null ? '' : (in_array($step, ServerRunner::AUTOMATIC_STEPS, true)
-                ? 'This runs all of the discovery and endpoint checks again.'
-                : 'Its request becomes the next step of the run.'),
+            'options'      => $options->toArray(),
             'csrf'         => $visitor->session()->csrf,
             'notice'       => is_string($flash['message'] ?? null) && $flash['message'] !== '' ? $flash['message'] : null,
             'exchanges'    => $exchanges,
@@ -315,13 +336,16 @@ final class ServerRunController extends Controller
         $test    = $this->serverTest($params);
         $result  = $this->results->forRun($run->id)[$test->id] ?? null;
         $testUrl = '/runs/' . $run->publicId . '/tests/' . $test->id;
-        $reason  = $this->runner->rerunReason($run, $test->id, $result);
+        $options = $this->runner->optionsFor($run, $test->id, $result);
 
-        if ($reason !== null) {
-            return $this->guard->commit(Response::seeOther($testUrl), $this->guard->flash($visitor, ['message' => $reason]));
+        if ($options->kind !== TestOptions::RUN) {
+            return $this->guard->commit(
+                Response::seeOther($options->kind === TestOptions::CONTINUE ? '/runs/' . $run->publicId . '/step' : $testUrl),
+                $this->guard->flash($visitor, ['message' => $options->reason ?? 'That step is already in progress.']),
+            );
         }
 
-        $automatic = in_array($result['step'], ServerRunner::AUTOMATIC_STEPS, true);
+        $automatic = in_array($options->step, ServerRunner::AUTOMATIC_STEPS, true);
 
         // Automatic checks fetch from the server under test straight away, like starting a run does.
         if ($automatic && $this->limiter->hit(self::RERUN_BUCKET, $request->ip, self::START_WINDOW) > self::RERUN_LIMIT) {
@@ -331,9 +355,9 @@ final class ServerRunController extends Controller
         $message = $this->runner->rerun($run, $test->id);
         $run     = $this->runs->find($run->id) ?? $run;
 
-        // A browser check asked for by name starts straight away, unless another step is in progress.
-        if (!$automatic && $this->runner->currentAction($run) === null && $this->runner->next($run)->step === $test->id) {
-            $message = 'Running ' . $test->id . ' again.';
+        // A step asked for by name starts straight away, unless another is in progress.
+        if (!$automatic && $this->runner->currentAction($run) === null && $this->runner->next($run)->step === $options->step) {
+            $message = $result === null ? 'Running ' . $test->id . ' now.' : 'Running ' . $test->id . ' again.';
         }
 
         return $this->guard->commit(

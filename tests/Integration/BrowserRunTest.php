@@ -221,14 +221,96 @@ final class BrowserRunTest extends AppTestCase
         $this->assertStringContainsString('data-step="S207"', $step->body);
         $this->assertStringContainsString('Running S207 again.', $step->body);
 
-        // Tests checked with others explain why there is no button.
+        // A test graded with others offers the step that covers it, and says what that costs.
         $login = $this->request('GET', $runUrl . '/tests/S301');
-        $this->assertStringNotContainsString('Run this test again', $login->body);
-        $this->assertStringContainsString('Start a new run', $login->body);
+        $this->assertStringContainsString('Run that step again', $login->body);
+        $this->assertStringContainsString('needs one approval at your server', $login->body);
+        $this->assertStringContainsString('Sign in with your server', $login->body);
 
         // Another browser cannot.
         $this->cookies = [];
         $this->assertContains($this->request('POST', $runUrl . '/tests/S207/rerun', ['_csrf' => 'x'])->status, [400, 403]);
+    }
+
+    /**
+     * The reported dead end: the browser was sent to the server for a check and
+     * never came back, so the test has no result — and its page said only "this
+     * test has not run yet", with nothing to click.
+     */
+    public function test_a_step_left_half_done_can_be_continued_or_started_again(): void
+    {
+        $server = $this->server();
+        $home   = $this->request('GET', self::BASE);
+        $start  = $this->request('POST', self::BASE . 'server-runs', ['_csrf' => self::csrf($home->body), 'me' => 'me.example']);
+        $runUrl = self::BASE . ltrim((string) $start->header('location'), '/');
+        $runId  = basename($runUrl);
+
+        // Open the sign-in request and simply never come back from it.
+        $step = $this->openStep($runUrl, $this->request('GET', $runUrl));
+        preg_match('#href="(/runs/[^"]+/go/([^"]+))"#', $step->body, $go);
+        $this->request('GET', self::BASE . ltrim($go[1], '/'));
+        $opened = $go[2];
+
+        // Its test page offers the way back in, both ways.
+        $test = $this->request('GET', $runUrl . '/tests/S301');
+        $this->assertSame(200, $test->status);
+        $this->assertStringContainsString('Continue this test', $test->body);
+        $this->assertStringContainsString('have not come back', $test->body);
+        $this->assertStringContainsString('Start this step again', $test->body);
+
+        // The row someone scrolls to is a way in as well.
+        $this->assertStringContainsString('<a class="badge" href="/runs/' . $runId . '/step">In progress</a>', $this->request('GET', $runUrl)->body);
+
+        $restarted = $this->request('POST', $runUrl . '/restart', ['_csrf' => self::csrf($test->body)]);
+        $this->assertSame(303, $restarted->status);
+        $this->assertSame('/runs/' . $runId . '/step', $restarted->header('location'));
+
+        // A fresh request, and the one left open no longer counts.
+        $step = $this->request('GET', $runUrl . '/step');
+        $this->assertSame(200, $step->status);
+        preg_match('#href="(/runs/[^"]+/go/([^"]+))"#', $step->body, $again);
+        $this->assertNotSame($opened, $again[2], 'the step should be waiting on a new request');
+        $this->assertStringContainsString('Starting Sign in with your server again.', $step->body);
+    }
+
+    /** Any check can be asked for by name, rather than waiting its turn in the queue. */
+    public function test_a_check_that_has_not_run_can_be_started_from_its_own_page(): void
+    {
+        $server = $this->server();
+        $home   = $this->request('GET', self::BASE);
+        $start  = $this->request('POST', self::BASE . 'server-runs', ['_csrf' => self::csrf($home->body), 'me' => 'me.example']);
+        $runUrl = self::BASE . ltrim((string) $start->header('location'), '/');
+        $runId  = basename($runUrl);
+
+        // S212 is far down the queue and has never run.
+        $test = $this->request('GET', $runUrl . '/tests/S212');
+        $this->assertStringContainsString('Run this test now', $test->body);
+        $this->assertStringNotContainsString('This test has not run yet', $test->body);
+
+        $queued = $this->request('POST', $runUrl . '/tests/S212/rerun', ['_csrf' => self::csrf($test->body)]);
+        $this->assertSame('/runs/' . $runId . '/step', $queued->header('location'));
+
+        $step = $this->request('GET', $runUrl . '/step');
+        $this->assertStringContainsString('data-step="S212"', $step->body);
+        $this->assertStringContainsString('Running S212 now.', $step->body);
+    }
+
+    /** A test graded inside a step points at the step, and says what running it costs. */
+    public function test_a_grouped_test_offers_the_step_that_grades_it(): void
+    {
+        $this->server();
+        $home   = $this->request('GET', self::BASE);
+        $start  = $this->request('POST', self::BASE . 'server-runs', ['_csrf' => self::csrf($home->body), 'me' => 'me.example']);
+        $runUrl = self::BASE . ltrim((string) $start->header('location'), '/');
+
+        $test = $this->request('GET', $runUrl . '/tests/S311');
+        $this->assertStringContainsString('Run the step that checks this', $test->body);
+        $this->assertStringContainsString('needs one approval at your server', $test->body);
+        $this->assertStringContainsString('S312', $test->body, 'it should name the tests it grades alongside');
+
+        $queued = $this->request('POST', $runUrl . '/tests/S311/rerun', ['_csrf' => self::csrf($test->body)]);
+        $this->assertSame(303, $queued->status);
+        $this->assertStringContainsString('c3', json_encode($this->container->get(RunRepository::class)->findByPublicId(basename($runUrl))->state['queue']));
     }
 
     public function test_unregistered_redirects_land_on_the_catch_page(): void

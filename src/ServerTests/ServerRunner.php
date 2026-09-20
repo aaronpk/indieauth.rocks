@@ -57,6 +57,13 @@ final class ServerRunner
 
     private const STEPS_WITHOUT_RECORDED_SKIP = ['c2b', 'c3b', 'c4', 'c5', 'c8'];
 
+    /**
+     * Steps that are queued behind another when it is asked for by name, as
+     * they are at the start of a run. Each is dropped as "Not needed." unless
+     * that step finds the server burns codes on a failed attempt.
+     */
+    private const COMPANION_STEPS = ['c2' => ['c2b'], 'c3' => ['c3b']];
+
     /** Tests that grade the sign-in's token response or use its tokens, so its request shows on their pages. */
     private const SIGN_IN_TOKEN_TESTS = ['S301', 'S401', 'S402', 'S403', 'S404', 'S405', 'S406', 'S407', 'S408', 'S409', 'S410', 'S420', 'S421', 'S422', 'S423', 'S501', 'S502', 'S503', 'S504', 'S505', 'S701', 'S801', 'S802'];
 
@@ -396,19 +403,128 @@ final class ServerRunner
      *
      * @param array<string, mixed>|null $result The test's row from ResultRepository::forRun().
      */
+    /** The step that grades a test, whether or not it has run. */
+    public function stepFor(string $testId): ?string
+    {
+        foreach (self::STEP_TESTS as $step => $ids) {
+            if (in_array($testId, $ids, true)) {
+                return $step;
+            }
+        }
+
+        // A browser check is a step in its own right.
+        return in_array($testId, ProbeGrader::ALL, true) ? $testId : null;
+    }
+
+    /**
+     * What can be done about one test now.
+     *
+     * A test that has not run is the one somebody most wants to start, so "it
+     * has not happened yet" is an answer to the wrong question. What matters is
+     * whether the step that grades it can be put at the front of the queue,
+     * which for everything but the sticky checks it can.
+     *
+     * @param array<string, mixed>|null $result Its recorded result, if it has one.
+     */
+    public function optionsFor(Run $run, string $testId, ?array $result): TestOptions
+    {
+        $state   = $run->state;
+        $current = $state['current'] ?? null;
+        // The step to offer is the one that grades this test by design, not
+        // whichever contingency step a result happened to be recorded under:
+        // c4 exists only when codes burn, and its skipReason ("Not needed.")
+        // means nothing to a person who asked for S311.
+        $step    = $this->stepFor($testId) ?? ($result['step'] ?? null);
+
+        if ($run->status === Run::ABANDONED) {
+            return TestOptions::none('This run was abandoned. Start a new run to test your server again.');
+        }
+
+        if (in_array($testId, self::STICKY_TESTS, true)) {
+            return TestOptions::none('This is checked on every redirect back from your server, keeping the worst result. Start a new run to check it again.');
+        }
+
+        if ($step === null) {
+            return TestOptions::none('This test is not part of a server run.');
+        }
+
+        if (($current['step'] ?? null) === $step) {
+            $awaiting = (string) $current['awaiting'];
+
+            return TestOptions::continueStep($step, match ($awaiting) {
+                'landing' => 'You were sent to your server for this and have not come back. Carry on where you left off, or start the request again.',
+                'wait'    => 'This step is waiting for the code to expire. Starting it again would throw away the code it is holding.',
+                default   => 'Your server has been asked; the step page has the question about what you saw.',
+            }, $awaiting === 'landing');
+        }
+
+        $skip = $this->skipReason($state, $step);
+
+        if ($skip !== null) {
+            // Before S215 has run, nothing is known either way, and "Your
+            // server requires PKCE" would be a guess stated as a finding.
+            if ($step === 'S322' && !isset($this->results->forRun($run->id)['S215'])) {
+                return TestOptions::none('This only applies to a server that accepts a request with no PKCE challenge, which S215 has not checked yet. Run S215 first.');
+            }
+
+            return TestOptions::none($skip);
+        }
+
+        if (in_array($step, self::AUTOMATIC_STEPS, true)) {
+            return TestOptions::run($step, 'Run this test again', 'This runs all of the discovery and endpoint checks again.');
+        }
+
+        $ran      = $result !== null;
+        $siblings = array_values(array_diff($this->testsFor($step), [$testId]));
+
+        if ($step === $testId) {
+            return TestOptions::run(
+                $step,
+                $ran ? 'Run this test again' : 'Run this test now',
+                'It becomes the next step of the run, ahead of whatever else is waiting.',
+            );
+        }
+
+        $hint = sprintf(
+            'This runs %s, which needs one approval at your server%s.',
+            $this->title($step),
+            $siblings === [] ? '' : ' and also grades ' . self::andList($siblings),
+        );
+
+        return TestOptions::run(
+            $step,
+            $ran ? 'Run that step again' : 'Run the step that checks this',
+            $ran && $siblings !== [] ? $hint . ' Their current results are replaced.' : $hint,
+        );
+    }
+
+    /** Kept for callers that only want the refusal. */
     public function rerunReason(Run $run, string $testId, ?array $result): ?string
     {
-        $step = $result['step'] ?? null;
+        return $this->optionsFor($run, $testId, $result)->reason;
+    }
 
-        return match (true) {
-            $run->status === Run::ABANDONED                => 'This run was abandoned. Start a new run to test your server again.',
-            in_array($testId, self::STICKY_TESTS, true)    => 'This is checked on every redirect back from your server, keeping the worst result. Start a new run to check it again.',
-            $step === null                                 => 'This test has not run yet.',
-            in_array($step, self::AUTOMATIC_STEPS, true)   => null,
-            in_array($testId, ProbeGrader::ALL, true) && $step === $testId
-                                                           => $this->skipReason($run->state, $testId),
-            default                                        => sprintf('This is checked together with other tests during this step: %s. Start a new run to check it again.', $this->title((string) $step)),
-        };
+    /**
+     * A readable list. The sign-in step grades twenty-five other tests, and
+     * naming them all buries the sentence they belong to.
+     *
+     * @param list<string> $items
+     */
+    private static function andList(array $items, int $most = 6): string
+    {
+        if (count($items) > $most) {
+            $rest = count($items) - $most;
+
+            return implode(', ', array_slice($items, 0, $most)) . sprintf(' and %d other%s', $rest, $rest === 1 ? '' : 's');
+        }
+
+        if (count($items) === 1) {
+            return $items[0];
+        }
+
+        $last = array_pop($items);
+
+        return implode(', ', $items) . ' and ' . $last;
     }
 
     /**
@@ -419,36 +535,49 @@ final class ServerRunner
      */
     public function rerun(Run $run, string $testId): string
     {
-        $result = $this->results->forRun($run->id)[$testId] ?? null;
-        $reason = $this->rerunReason($run, $testId, $result);
+        $result  = $this->results->forRun($run->id)[$testId] ?? null;
+        $options = $this->optionsFor($run, $testId, $result);
 
-        if ($reason !== null) {
-            throw new \LogicException($testId . ' cannot run again: ' . $reason);
+        if ($options->kind !== TestOptions::RUN) {
+            throw new \LogicException($testId . ' cannot run again: ' . ($options->reason ?? 'it is the step in progress.'));
         }
 
         $state = $run->state;
 
-        if (in_array($result['step'], self::AUTOMATIC_STEPS, true)) {
+        if (in_array($options->step, self::AUTOMATIC_STEPS, true)) {
             $this->runAutomaticChecks($run, $state);
             $this->runs->save($run, $state);
 
             return 'The discovery and endpoint checks ran again.';
         }
 
-        // finish() revoked the tokens and cleared the vault. Browser checks
-        // need neither: a fresh attempt stores its own verifier, and next()
-        // finishes the run again once the queue is empty.
+        return $this->runStep($run, (string) $options->step);
+    }
+
+    /**
+     * Put a step at the front of the queue, whether or not it has run.
+     *
+     * finish() revoked the tokens and cleared the vault. A step that needs the
+     * browser needs neither: a fresh attempt stores its own verifier, and
+     * next() finishes the run again once the queue is empty.
+     *
+     * @return string A notice for the person.
+     */
+    public function runStep(Run $run, string $step): string
+    {
+        $state          = $run->state;
         $status         = $run->isFinished() ? Run::RUNNING : null;
         $current        = $state['current'] ?? null;
-        $state['queue'] = array_values(array_filter($state['queue'], static fn (string $step): bool => $step !== $testId));
+        $name           = $this->stepName($step);
+        $state['queue'] = array_values(array_filter($state['queue'], static fn (string $queued): bool => $queued !== $step));
 
-        if (($current['step'] ?? null) === $testId) {
+        if (($current['step'] ?? null) === $step) {
             $this->runs->save($run, $state, $status);
 
-            return $testId . ' is already the next step.';
+            return $name . ' is already the next step.';
         }
 
-        $message = $testId . ' is now the next step.';
+        $message = $name . ' is now the next step.';
 
         if ($current !== null && $current['awaiting'] === 'landing') {
             // The request that was next goes back in line. If the browser
@@ -457,13 +586,49 @@ final class ServerRunner
             array_unshift($state['queue'], $current['step']);
             $state['current'] = null;
         } elseif ($current !== null) {
-            $message = $testId . ' will run after the step in progress.';
+            $message = $name . ' will run after the step in progress.';
         }
 
-        array_unshift($state['queue'], $testId);
+        array_unshift($state['queue'], $step, ...(self::COMPANION_STEPS[$step] ?? []));
         $this->runs->save($run, $state, $status);
 
         return $message;
+    }
+
+    /**
+     * Throw away the request the browser never came back from, so the step can
+     * be started again.
+     *
+     * @return string|null Why it could not be, or null when it was.
+     */
+    public function restart(Run $run): ?string
+    {
+        $state   = $run->state;
+        $current = $state['current'] ?? null;
+
+        if ($current === null) {
+            return 'No step is in progress.';
+        }
+
+        if ($current['awaiting'] !== 'landing') {
+            return $current['awaiting'] === 'wait'
+                ? 'This step is waiting for the code to expire, and starting it again would throw away the code it is holding.'
+                : 'This step is waiting for your answer, which the step page asks for.';
+        }
+
+        $state['completed'][$current['attempt']] = true;
+        array_unshift($state['queue'], $current['step']);
+        $state['current'] = null;
+
+        $this->runs->save($run, $state);
+
+        return null;
+    }
+
+    /** A step's own name where it has one, its test id where the step is the test. */
+    private function stepName(string $step): string
+    {
+        return isset(self::STEP_TESTS[$step]) && count(self::STEP_TESTS[$step]) > 1 ? $this->title($step) : $step;
     }
 
     // ================================================================== answer

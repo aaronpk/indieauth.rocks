@@ -36,6 +36,10 @@
             <summary>Show the request</summary>
             <pre class="code-block"><code><?= $action['url'] ?></code></pre>
         </details>
+        <form method="post" action="/runs/<?= $run['public_id'] ?>/restart" class="restart-form">
+            <input type="hidden" name="_csrf" value="<?= $csrf ?>">
+            <p class="hint">Opened it already and never got back? <button type="submit" class="link-button">Start this step again</button>.</p>
+        </form>
     <?php } ?>
 
     <?php if ($action['type'] === 'wait') { ?>

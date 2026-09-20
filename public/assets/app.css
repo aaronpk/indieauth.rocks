@@ -306,7 +306,8 @@ img { max-width: 100%; }
     padding: clamp(1.25rem, 1rem + 1vw, 2rem);
 }
 
-.card + .card, .notice + .card, .alert + .card, .page-header + .card { margin-top: 1.25rem; }
+.card + .card, .notice + .card, .alert + .card, .page-header + .card,
+.roles + .card { margin-top: 1.25rem; }
 
 .card-header {
     display: flex;
@@ -730,5 +731,4 @@ table.results tr.is-next td:first-child { box-shadow: inset 3px 0 0 var(--accent
 .badge.checkup-problem { color: var(--must); background: var(--must-soft); border-color: transparent; }
 .badge.checkup-unknown, .badge.checkup-pending, .badge.checkup-skipped { color: var(--muted); }
 
-.role-checkup { margin-bottom: 3rem; }
 .role-checkup form { max-width: 28rem; }

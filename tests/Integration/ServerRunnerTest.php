@@ -181,6 +181,24 @@ final class ServerRunnerTest extends AppTestCase
         }
     }
 
+    /**
+     * Every code is exchanged at the token endpoint now. A server that still
+     * takes a scopeless exchange only at its authorization endpoint signs
+     * people in, so it is warned rather than failed.
+     */
+    public function test_a_server_still_redeeming_at_the_authorization_endpoint_is_warned(): void
+    {
+        $outcomes = $this->outcomes($this->drive($this->server('scopelessOnlyAtAuthorization')));
+
+        $this->assertSame('warning', $outcomes['S320'] ?? 'missing');
+        $this->assertSame('pass', $outcomes['S301'] ?? 'missing', 'a code with a scope is unaffected');
+    }
+
+    public function test_a_correct_server_exchanges_a_scopeless_code_at_the_token_endpoint(): void
+    {
+        $this->assertSame('pass', $this->outcomes($this->drive($this->server()))['S320'] ?? 'missing');
+    }
+
     public function test_probe_questions_cover_every_probe(): void
     {
         foreach (ProbeGrader::ALL as $id) {

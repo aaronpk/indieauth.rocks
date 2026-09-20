@@ -280,6 +280,13 @@ final class FakeIndieAuthServer
             return $this->error('invalid_grant');
         }
 
+        // A server written to the older specification takes an exchange without
+        // a scope only at its authorization endpoint, and refuses here without
+        // spending the code.
+        if ($atTokenEndpoint && $grant['scope'] === '' && isset($this->defects['scopelessOnlyAtAuthorization'])) {
+            return $this->error('invalid_request');
+        }
+
         $this->codes[$code]['used'] = true;
 
         $body = ['me' => $grant['me']];

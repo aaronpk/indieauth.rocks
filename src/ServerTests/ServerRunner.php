@@ -913,7 +913,7 @@ final class ServerRunner
         $this->recordAll($run, $this->flows->revocation($endpoints, $urls->clientId(), $access, $reply->string('refresh_token'), false), 'c7');
     }
 
-    /** c3, c3b, c4, c5: codes without scope, redeemed at the authorization endpoint. */
+    /** c3, c3b, c4, c5: codes without scope, and the rejections around them. */
     private function onScopelessCode(Run $run, array &$state, AuthorizationAttempt $attempt, Landing $landing, string &$message): void
     {
         $step = $attempt->step;
@@ -962,15 +962,39 @@ final class ServerRunner
             return;
         }
 
-        // Whether it works also decides if the rejections before it proved anything.
-        $reply = $this->client->forTests(['S320', ...$recorded], fn (): Reply => $this->client->redeem($endpoint, $code, $client, $redirect, $attempt->verifier));
+        // Every code is exchanged at the token endpoint now, whether or not a
+        // scope was asked for. Whether it works also decides if the rejections
+        // before it proved anything.
+        $tokenEndpoint = (string) ($state['endpoints']['token'] ?? '');
+        $reply         = $this->client->forTests(['S320', ...$recorded], fn (): Reply => $this->client->redeem($tokenEndpoint !== '' ? $tokenEndpoint : $endpoint, $code, $client, $redirect, $attempt->verifier));
 
         if ($reply->isSuccess()) {
             $this->results->record($run->id, match (true) {
-                $reply->string('access_token') !== null => Verdict::fail('S320', 'The authorization endpoint returned an access token.'),
+                $reply->string('access_token') !== null => Verdict::fail('S320', 'An access token was issued for a code without any scope.'),
                 $reply->string('me') === null           => Verdict::fail('S320', 'The response has no me.'),
                 default                                 => Verdict::pass('S320', 'Returned me (' . $reply->string('me') . ') and no access token.'),
             }, $step);
+
+            if ($burns === null && $recorded !== []) {
+                $state['flags']['burns_at_authorization'] = false;
+            }
+
+            return;
+        }
+
+        // A server on the older specification takes this exchange only at its
+        // authorization endpoint. That still signs people in, so it is a
+        // warning rather than a failure — but apps written to the current
+        // specification will not find it there.
+        $older = $tokenEndpoint === '' || $tokenEndpoint === $endpoint
+            ? null
+            : $this->client->forTests(['S320', ...$recorded], fn (): Reply => $this->client->redeem($endpoint, $code, $client, $redirect, $attempt->verifier));
+
+        if ($older !== null && $older->isSuccess() && $older->string('me') !== null) {
+            $this->results->record($run->id, Verdict::warning('S320', sprintf(
+                'The token endpoint refused the code (%s), but the authorization endpoint exchanged it. That is where the older specification put this exchange.',
+                $reply->describe(),
+            )), $step);
 
             if ($burns === null && $recorded !== []) {
                 $state['flags']['burns_at_authorization'] = false;
@@ -994,7 +1018,7 @@ final class ServerRunner
             return;
         }
 
-        $this->results->record($run->id, Verdict::fail('S320', 'Redeeming the code at the authorization endpoint returned ' . $reply->describe() . '.'), $step);
+        $this->results->record($run->id, Verdict::fail('S320', 'Redeeming the code without a scope returned ' . $reply->describe() . '.'), $step);
     }
 
     private function onScopelessAtTokenEndpoint(Run $run, array &$state, AuthorizationAttempt $attempt, Landing $landing, string &$message): void

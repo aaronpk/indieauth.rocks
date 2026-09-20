@@ -197,9 +197,11 @@ final class ServerCatalog
         $add('S313', self::REDEMPTION, 'Refuses a mismatched redirect_uri', Level::MUST, Mode::APPROVE, '§5.3.1',
             'Exchanges a code with a different redirect_uri from the authorization request.',
             'The exchange is refused.', ['S106']);
-        $add('S320', self::REDEMPTION, 'Exchanges a code at the authorization endpoint', Level::MUST, Mode::APPROVE, '§5.3.2',
-            'Signs in without requesting any scope, then exchanges the code at the authorization endpoint.',
-            'Returns HTTP 200 with me, and no access_token.', ['S106']);
+        $add('S320', self::REDEMPTION, 'Exchanges a code without a scope', Level::MUST, Mode::APPROVE, '§5.3.1, §5.3.3',
+            'Signs in without requesting any scope, then exchanges the code at the token endpoint. Servers that '
+                . 'take this exchange only at the authorization endpoint, as the older specification had it, are '
+                . 'warned rather than failed.',
+            'The token endpoint returns HTTP 200 with me, and no access_token.', ['S107']);
         $add('S321', self::REDEMPTION, 'No access token without a scope', Level::MUST, Mode::APPROVE, '§5.3.3',
             'Signs in without requesting any scope, then exchanges the code at the token endpoint.',
             'Returns me but no access_token.', ['S107'], true);

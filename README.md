@@ -28,7 +28,7 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 |---|---|
 | 100s | Discovery and the metadata document |
 | 200s | Authorization requests and responses: `state`, `iss`, client information, redirect URI checks, PKCE |
-| 300s | Code redemption: single use, wrong verifier/client/redirect URI, redemption at the authorization endpoint |
+| 300s | Code redemption: single use, wrong verifier/client/redirect URI, codes without a scope |
 | 400s | Token responses, including JWT access tokens (RFC 9068) and the keys at `jwks_uri` |
 | 500s | Refresh tokens: rotation, reuse detection, scope |
 | 600s | Revocation |

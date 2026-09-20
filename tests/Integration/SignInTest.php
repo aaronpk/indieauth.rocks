@@ -72,6 +72,26 @@ final class SignInTest extends AppTestCase
         $this->assertSame(400, $this->request('GET', $landing)->status);
     }
 
+    /** The code goes to the token endpoint, as every exchange does now. */
+    public function test_signing_in_exchanges_the_code_at_the_token_endpoint(): void
+    {
+        $server  = $this->server();
+        $landing = (string) $server->authorize((string) $this->submit()->header('location'), 'approve');
+
+        $this->assertSame(303, $this->request('GET', $landing)->status);
+        $this->assertSame(200, $this->request('GET', self::BASE . 'account')->status);
+    }
+
+    /** A server written to the older specification still signs people in here. */
+    public function test_a_server_that_only_redeems_at_its_authorization_endpoint_still_works(): void
+    {
+        $server  = $this->server('scopelessOnlyAtAuthorization');
+        $landing = (string) $server->authorize((string) $this->submit()->header('location'), 'approve');
+
+        $this->assertSame(303, $this->request('GET', $landing)->status);
+        $this->assertSame(200, $this->request('GET', self::BASE . 'account')->status);
+    }
+
     public function test_a_redirect_opened_in_another_browser_signs_nobody_in(): void
     {
         $server  = $this->server();

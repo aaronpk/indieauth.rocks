@@ -99,6 +99,7 @@ final class SignInController extends Controller
             'profile'        => $profile,
             'discovery_urls' => $discovery->discoveryUrls(),
             'authorization'  => $endpoint,
+            'token'          => $discovery->tokenEndpoint(),
             'issuer'         => $discovery->string('issuer'),
             'verifier'       => $verifier,
             'next'           => $next,
@@ -160,11 +161,24 @@ final class SignInController extends Controller
             return $refuse('Your server did not return an authorization code.');
         }
 
-        $reply = (new TokenClient($this->http))->redeem((string) $pending['authorization'], $code, $this->clientId(), $this->callbackUrl(), (string) $pending['verifier']);
+        // The code goes to the token endpoint, which is where every exchange
+        // happens now. Servers that still take an exchange without a scope only
+        // at their authorization endpoint keep working: signing in here should
+        // not depend on which specification they were written to.
+        $client   = new TokenClient($this->http);
+        $fallback = (string) $pending['authorization'];
+        $token    = is_string($pending['token'] ?? null) && $pending['token'] !== '' ? $pending['token'] : $fallback;
+
+        $reply = $client->redeem($token, $code, $this->clientId(), $this->callbackUrl(), (string) $pending['verifier']);
         $me    = $reply->isSuccess() ? $reply->string('me') : null;
 
+        if ($me === null && $token !== $fallback) {
+            $reply = $client->redeem($fallback, $code, $this->clientId(), $this->callbackUrl(), (string) $pending['verifier']);
+            $me    = $reply->isSuccess() ? $reply->string('me') : null;
+        }
+
         if ($me === null) {
-            return $refuse('Your authorization endpoint did not confirm who you are: ' . $reply->describe() . '.');
+            return $refuse('Your server did not confirm who you are: ' . $reply->describe() . '.');
         }
 
         $verified = (new MeVerifier(new Discovery($this->http)))->verify($me, (array) $pending['discovery_urls'], (string) $pending['authorization']);

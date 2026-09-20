@@ -32,6 +32,7 @@ final class AccountController extends Controller
         }
 
         return $this->page('account', 'Your test runs', [
+            'menu_section' => 'account',
             'me'   => $visitor->user()->me,
             'runs' => array_map(static fn (array $r): array => [
                 'public_id' => (string) $r['public_id'],

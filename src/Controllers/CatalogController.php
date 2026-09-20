@@ -38,6 +38,7 @@ final class CatalogController extends Controller
         );
 
         return $this->page('catalog/test', $test->id . ': ' . $test->title, [
+            'menu_section' => $test->suite === Catalog::SERVER ? 'server-tests' : 'client-tests',
             'test'         => $test->toArray(),
             'dependencies' => $dependencies,
             'list_url'     => $test->suite === Catalog::SERVER ? '/server-tests' : '/client-tests',
@@ -58,6 +59,7 @@ final class CatalogController extends Controller
         }
 
         return $this->guard->commit($this->page('catalog/list', $title, [
+            'menu_section' => $suite === Catalog::SERVER ? 'server-tests' : 'client-tests',
             'heading'   => $title,
             'intro'     => $intro,
             'suite'     => $suite,

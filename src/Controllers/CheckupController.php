@@ -108,6 +108,7 @@ final class CheckupController extends Controller
 
         return $this->guard->commit(
             $this->page('checkup/show', 'Check your login', [
+                'menu_section' => 'check',
                 'checkup'  => [
                     'id'      => $checkup->publicId(),
                     'target'  => $checkup->profileUrl(),
@@ -283,6 +284,7 @@ final class CheckupController extends Controller
     {
         return $this->guard->commit(
             $this->page('checkup/form', 'Check your login', [
+                'menu_section' => 'check',
                 'csrf'  => $visitor->session()->csrf,
                 'error' => $error,
                 'me'    => $me,

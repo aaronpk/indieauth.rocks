@@ -75,6 +75,7 @@ final class TestServerController extends Controller
 
         if ($result['attempt'] === null) {
             return $this->guard->commit($this->page('testserver/error', 'Test server: request refused', [
+                'show_menu' => false,
                 'test_id' => 'C' . $n,
                 'errors'  => $result['errors'],
             ], 400, $visitor)->withNoStore(), $visitor);
@@ -83,6 +84,7 @@ final class TestServerController extends Controller
         $redirect = (string) $result['params']['redirect_uri'];
 
         return $this->guard->commit($this->page('testserver/consent', 'Test server: approve sign-in', [
+            'show_menu' => false,
             'test_id'      => 'C' . $n,
             'test_title'   => (string) Catalog::find('C' . $n)?->title,
             'decoy'        => $decoy,

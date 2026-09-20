@@ -47,6 +47,11 @@ abstract class Controller
             'content' => $this->view->partial($template, $vars + $shared),
             'script'  => isset($vars['script']) && is_string($vars['script']) ? $vars['script'] : null,
             'wide'    => (bool) ($vars['wide'] ?? false),
+            // Which menu item to mark, and whether to offer the menu at all:
+            // the test server's own screens belong to a test, not to this site,
+            // for whoever a client under test has just sent there.
+            'menu_section' => isset($vars['menu_section']) && is_string($vars['menu_section']) ? $vars['menu_section'] : null,
+            'show_menu'    => (bool) ($vars['show_menu'] ?? true),
         ]), $status);
     }
 

@@ -57,6 +57,7 @@ final class ClientRunController extends Controller
         ));
 
         return $this->guard->commit($this->page('client-run/index', 'Client tests', [
+            'menu_section' => 'client-tests',
             'csrf' => $visitor->session()->csrf,
             'runs' => array_map(static fn (array $r): array => ['public_id' => (string) $r['public_id'], 'created' => (string) $r['created_at']], $runs),
         ], visitor: $visitor), $visitor);
@@ -109,6 +110,7 @@ final class ClientRunController extends Controller
         }
 
         return $this->page('client-run/show', 'Client test run', [
+            'menu_section' => 'client-tests',
             'run_id'   => $run->publicId,
             'pin'      => (string) ($run->state['pin'] ?? ''),
             'csrf'     => $visitor->session()->csrf,
@@ -181,6 +183,7 @@ final class ClientRunController extends Controller
         $expected = $signin ? ClientGrader::expectedMe($urls, $n) : null;
 
         return $this->guard->commit($this->page('client-run/test', $test->id . ': ' . $test->title, [
+            'menu_section' => 'client-tests',
             'run_id'    => $run->publicId,
             'test'      => $test->toArray(),
             'outcome'   => (string) ($result['outcome'] ?? Outcome::NOT_RUN->value),

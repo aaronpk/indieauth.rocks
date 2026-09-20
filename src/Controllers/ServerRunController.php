@@ -128,6 +128,7 @@ final class ServerRunController extends Controller
         }
 
         return $this->guard->commit($this->page('run/show', 'Server test run', [
+            'menu_section' => 'server-tests',
             'run'        => [
                 'public_id' => $run->publicId,
                 'target'    => (string) $run->targetUrl,
@@ -208,6 +209,7 @@ final class ServerRunController extends Controller
         $flash = $this->guard->takeFlash($visitor);
 
         return $this->guard->commit($this->page('run/step', $action->title, [
+            'menu_section' => 'server-tests',
             'run'       => ['public_id' => $run->publicId, 'target' => (string) $run->targetUrl],
             'action'    => $action->toArray(),
             'approvals' => $this->runner->approvalsRemaining($run),
@@ -278,6 +280,7 @@ final class ServerRunController extends Controller
         $hidden = $step === null ? 0 : count($this->exchanges->forStep($run->id, (string) $step)) - count($exchanges);
 
         return $this->guard->commit($this->page('run/transcript', $test->id . ' ' . $test->title, [
+            'menu_section' => 'server-tests',
             'run_id'       => $run->publicId,
             'test'         => $test->toArray(),
             'outcome'      => (string) ($result['outcome'] ?? 'not_run'),

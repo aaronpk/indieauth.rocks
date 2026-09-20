@@ -138,11 +138,6 @@ img { max-width: 100%; }
     border: 1px solid var(--line);
 }
 
-.nav { display: flex; align-items: center; gap: 1.1rem; font-size: .9375rem; }
-.nav a { color: var(--ink); text-decoration: none; }
-.nav a:hover { color: var(--accent); }
-.nav-form { display: inline; margin: 0; }
-
 .link-button {
     padding: 0;
     font: inherit;
@@ -153,9 +148,6 @@ img { max-width: 100%; }
     text-decoration: underline;
     text-underline-offset: .15em;
 }
-
-.nav .link-button { color: var(--muted); text-decoration: none; }
-.nav .link-button:hover { color: var(--accent); }
 
 .shell {
     flex: 1;
@@ -177,6 +169,132 @@ img { max-width: 100%; }
 
 .site-footer nav { display: flex; flex-wrap: wrap; justify-content: center; gap: .5rem 1.25rem; margin-bottom: .5rem; }
 .site-footer a { color: var(--muted); }
+
+/*
+ * The main menu: a sidebar of stacked links beside the page on wide screens.
+ * On narrow screens it is a popover drawer opened by the header's menu button
+ * (popovertarget), so the browser handles Escape, tapping outside and focus
+ * with no JavaScript. Browsers without popover support show it as a plain
+ * list above the page. Sign-in screens apps send people to have no menu.
+ */
+.frame {
+    flex: 1;
+    width: 100%;
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 0 1.25rem;
+    display: grid;
+    grid-template-columns: 12rem minmax(0, 1fr);
+    gap: 2.5rem;
+    align-items: start;
+}
+
+.frame > .shell { grid-column: 2; grid-row: 1; margin: 0; padding-inline: 0; }
+
+.site-menu {
+    /* Undo the browser's popover styles: a sidebar until narrow screens. */
+    position: sticky;
+    inset: auto;
+    top: 3.5rem;
+    width: auto;
+    height: auto;
+    margin: 0;
+    border: 0;
+    color: inherit;
+    background: none;
+    overflow: visible;
+
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 2.5rem 0 2rem;
+    font-size: .9375rem;
+}
+
+.menu-group { display: flex; flex-direction: column; gap: .15rem; }
+.menu-group + .menu-group { padding-top: 1rem; border-top: 1px solid var(--line); }
+.menu-group form { margin: 0; }
+
+.menu-heading {
+    margin: 0 0 .25rem;
+    padding: 0 .75rem;
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.site-menu a,
+.site-menu .link-button {
+    display: block;
+    width: 100%;
+    padding: .5rem .75rem;
+    text-align: left;
+    color: var(--ink);
+    text-decoration: none;
+    border-radius: var(--radius-small);
+}
+
+.site-menu a:hover,
+.site-menu .link-button:hover { color: var(--ink); background: var(--accent-soft); }
+.site-menu [aria-current="page"] { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+
+.menu-user { margin: 0 0 .25rem; padding: 0 .75rem; font-size: .875rem; color: var(--muted); overflow-wrap: anywhere; }
+
+.menu-button {
+    display: none;
+    align-items: center;
+    gap: .5rem;
+    padding: .45rem .8rem;
+    font: inherit;
+    font-size: .9375rem;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-small);
+    cursor: pointer;
+}
+
+.menu-button:hover { border-color: var(--accent); color: var(--accent); }
+
+@media (max-width: 48rem) {
+    .frame { display: block; padding: 0; }
+    .frame > .shell { padding-inline: 1.25rem; }
+    .site-menu { position: static; padding: 1.5rem 1.25rem 0; }
+
+    @supports selector(:popover-open) {
+        .menu-button { display: inline-flex; }
+
+        .site-menu {
+            position: fixed;
+            inset: 0 auto 0 0;
+            width: min(18rem, 85vw);
+            height: 100dvh;
+            padding: 1.25rem .75rem;
+            overflow-y: auto;
+            background: var(--surface);
+            border-right: 1px solid var(--line);
+            box-shadow: var(--shadow);
+            transform: translateX(-100%);
+            transition: transform .2s ease, display .2s allow-discrete, overlay .2s allow-discrete;
+        }
+
+        .site-menu:not(:popover-open) { display: none; }
+        .site-menu:popover-open { transform: none; }
+        .site-menu::backdrop { background: rgb(0 0 0 / .4); }
+
+        @starting-style {
+            .site-menu:popover-open { transform: translateX(-100%); }
+        }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .site-menu { transition: none; }
+}
 
 /* --------------------------------------------------------------- blocks */
 
@@ -513,7 +631,6 @@ legend { margin-bottom: .5rem; padding: 0; font-weight: 600; font-size: .9rem; }
 .faq dd { margin: .35rem 0 0; color: var(--ink); }
 
 @media (max-width: 36rem) {
-    .nav { gap: .8rem; }
     .facts { grid-template-columns: 1fr; gap: .1rem; }
     .facts dd { margin-bottom: .5rem; }
 }

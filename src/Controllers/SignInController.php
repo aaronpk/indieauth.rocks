@@ -199,6 +199,7 @@ final class SignInController extends Controller
         // server. Browsers check form-action against that whole redirect
         // chain, so this page cannot restrict it to 'self'.
         return $this->guard->commit($this->page('sign-in', 'Sign in', [
+            'menu_section' => 'sign-in',
             'csrf'  => $visitor->session()->csrf,
             'next'  => $next,
             'error' => $error,

@@ -52,6 +52,7 @@ final class ReportController extends Controller
         }
 
         return $this->page('reports/index', 'Implementation reports', [
+            'menu_section' => 'reports',
             'servers' => $groups[Catalog::SERVER],
             'clients' => $groups[Catalog::CLIENT],
             'wide'    => true,
@@ -89,6 +90,7 @@ final class ReportController extends Controller
         $counts = (array) ($row['summary']['counts'] ?? []);
 
         return $this->guard->commit($this->page('reports/show', (string) $row['name'], [
+            'menu_section' => 'reports',
             'report'   => [
                 'id'        => $id,
                 'name'      => (string) $row['name'],

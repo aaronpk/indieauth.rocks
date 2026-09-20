@@ -22,7 +22,7 @@ $current = static fn (string $key): string => $key === $section ? ' aria-current
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><?= $title === $site_name ? $site_name : $title . ' · ' . $site_name ?></title>
-    <link rel="stylesheet" href="<?= $home_url ?>assets/app.css">
+    <link rel="stylesheet" href="<?= $home_url ?>assets/app.css?v=<?= $view->version('assets/app.css') ?>">
 </head>
 <body>
     <header class="site-header">

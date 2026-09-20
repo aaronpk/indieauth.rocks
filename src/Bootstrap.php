@@ -64,7 +64,7 @@ final class Bootstrap
             return RedisStore::connect($cfg->redisHost, $cfg->redisPort, $cfg->redisDb, $cfg->redisPrefix);
         });
 
-        $container->set(Template::class, static fn (): Template => new Template(SiteConfig::root() . '/templates'));
+        $container->set(Template::class, static fn (): Template => new Template(SiteConfig::root() . '/templates', SiteConfig::root() . '/public'));
 
         $container->set(HttpClient::class, static function (Container $c): HttpClient {
             $cfg = $c->get(SiteConfig::class);

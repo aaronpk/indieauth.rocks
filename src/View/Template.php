@@ -21,8 +21,34 @@ use Throwable;
  */
 final class Template
 {
-    public function __construct(private readonly string $directory)
+    /** @var array<string, string> Stat each asset once per request. */
+    private array $versions = [];
+
+    public function __construct(
+        private readonly string $directory,
+        private readonly ?string $publicDirectory = null,
+    ) {
+    }
+
+    /**
+     * A cache-busting query value for a file served from public/, so an edited
+     * stylesheet is fetched again instead of being remembered by a browser or
+     * a proxy for as long as it feels like.
+     *
+     * Falls back to no version when the file cannot be read: a missing
+     * stylesheet is a deploy problem, not a reason to fail the page.
+     */
+    public function version(string $publicPath): string
     {
+        if (isset($this->versions[$publicPath])) {
+            return $this->versions[$publicPath];
+        }
+
+        $mtime = $this->publicDirectory === null || str_contains($publicPath, '..')
+            ? false
+            : @filemtime($this->publicDirectory . '/' . ltrim($publicPath, '/'));
+
+        return $this->versions[$publicPath] = $mtime === false ? '' : (string) $mtime;
     }
 
     /** @param array<string, mixed> $vars */

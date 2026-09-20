@@ -22,7 +22,7 @@ use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
-use IndieAuthRocks\View\BodyFormat;
+use IndieAuthRocks\View\ExchangeRows;
 use IndieAuthRocks\View\Template;
 
 /** Server test runs in the browser. */
@@ -272,18 +272,7 @@ final class ServerRunController extends Controller
         $step    = $result['step'] ?? null;
         $reason  = $this->runner->rerunReason($run, $test->id, $result);
 
-        $exchanges = $step === null ? [] : array_map(static fn (array $e): array => [
-            'direction'        => (string) $e['direction'],
-            'method'           => (string) $e['method'],
-            'url'              => (string) $e['url'],
-            'status'           => $e['status'] !== null ? (int) $e['status'] : null,
-            'request_headers'  => self::headerText($e['request_headers']),
-            'request_body'     => BodyFormat::pretty((string) ($e['request_body'] ?? '')),
-            'response_headers' => self::headerText($e['response_headers']),
-            'response_body'    => BodyFormat::pretty((string) ($e['response_body'] ?? '')),
-            'error'            => (string) ($e['error'] ?? ''),
-            'created_at'       => (string) $e['created_at'],
-        ], $this->exchanges->forTest($run->id, (string) $step, $test->id));
+        $exchanges = $step === null ? [] : ExchangeRows::format($this->exchanges->forTest($run->id, (string) $step, $test->id));
 
         // Tests graded together share a step; requests made only for the others are left out.
         $hidden = $step === null ? 0 : count($this->exchanges->forStep($run->id, (string) $step)) - count($exchanges);
@@ -300,6 +289,7 @@ final class ServerRunController extends Controller
             'csrf'         => $visitor->session()->csrf,
             'notice'       => is_string($flash['message'] ?? null) && $flash['message'] !== '' ? $flash['message'] : null,
             'exchanges'    => $exchanges,
+            'exchanges_html' => $this->view->partial('partials/exchanges', ['exchanges' => $exchanges]),
             'hidden_count' => $hidden,
             'wide'         => true,
         ], visitor: $visitor)->withNoStore(), $visitor);
@@ -440,8 +430,11 @@ final class ServerRunController extends Controller
     {
         $id = $params['run'] ?? '';
 
-        return (preg_match('/^[0-9A-Z]{26}$/', $id) === 1 ? $this->runs->findByPublicId($id) : null)
-            ?? throw HttpException::notFound();
+        $run = preg_match('/^[0-9A-Z]{26}$/', $id) === 1 ? $this->runs->findByPublicId($id) : null;
+
+        // Runs of other kinds have their own pages: a checkup rendered here
+        // would be a server run with none of its state.
+        return $run !== null && $run->kind === Catalog::SERVER ? $run : throw HttpException::notFound();
     }
 
     /** @param array<string, string> $params */
@@ -491,18 +484,5 @@ final class ServerRunController extends Controller
     private static function ownerCookie(Run $run): string
     {
         return 'iar_run_' . strtolower($run->publicId);
-    }
-
-    /** @param array<string, string|list<string>> $headers */
-    private static function headerText(array $headers): string
-    {
-        $lines = [];
-        foreach ($headers as $name => $value) {
-            foreach ((array) $value as $v) {
-                $lines[] = $name . ': ' . $v;
-            }
-        }
-
-        return implode("\n", $lines);
     }
 }

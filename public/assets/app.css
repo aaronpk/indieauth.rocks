@@ -600,3 +600,18 @@ table.results tr.is-next td:first-child { box-shadow: inset 3px 0 0 var(--accent
 .evidence li.bad { color: var(--must); font-weight: 600; }
 .test-server { border: 2px dashed var(--should); }
 .test-server .eyebrow { color: var(--should); }
+
+/* Check your login: one step per card, in the order they happened. */
+.checkup-step h2 { margin: 0 0 .5rem; }
+.checkup-step .fix { border-left: 3px solid var(--accent); padding-left: .75rem; }
+.checkup-step .facts { margin-top: 1rem; }
+.checkup-step details { margin-top: 1rem; }
+.checkup-step details .card { margin: .75rem 0 0; }
+
+.badge.checkup-ok { color: var(--pass); background: var(--pass-soft); border-color: transparent; }
+.badge.checkup-note { color: var(--should); background: var(--should-soft); border-color: transparent; }
+.badge.checkup-problem { color: var(--must); background: var(--must-soft); border-color: transparent; }
+.badge.checkup-unknown, .badge.checkup-pending, .badge.checkup-skipped { color: var(--muted); }
+
+.role-checkup { margin-bottom: 3rem; }
+.role-checkup form { max-width: 28rem; }

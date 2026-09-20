@@ -51,6 +51,24 @@
     </div>
 </section>
 
+<section class="card role-checkup">
+    <h2>Trouble signing in somewhere?</h2>
+    <p>
+        If an app won't let you sign in with your domain name and only says "login failed", this walks
+        through the whole login with your own server and shows you every step — where it stopped, and
+        what to do about it. No account needed.
+    </p>
+    <form method="post" action="/check" class="stack">
+        <input type="hidden" name="_csrf" value="<?= $csrf ?>">
+        <div class="field">
+            <label for="check-me">Your website address</label>
+            <input id="check-me" name="me" type="text" required placeholder="example.com"
+                   autocapitalize="none" spellcheck="false" inputmode="url" autocomplete="url">
+        </div>
+        <button type="submit" class="button button-quiet">Check my login</button>
+    </form>
+</section>
+
 <section class="features">
     <div class="feature">
         <h3>Baseline behavior</h3>

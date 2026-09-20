@@ -73,6 +73,28 @@ A test suite for the [IndieAuth](https://indieauth.spec.indieweb.org/) protocol,
 - From a finished run, publish a report under a software name. The public report shows outcomes and summaries.
 - HTTP transcripts stay private to the tester.
 
+## Check your login
+
+The test suites are for people building IndieAuth servers and apps. **Check your login** (`/check`)
+is for the person whose login is broken: someone an app turned away with "login failed" and nothing
+else. It performs one ordinary login against their own server and narrates every step — fetching
+their home page, finding the server, reading its settings, the request they are sent with, what came
+back, and the exchange of the code — saying in plain words where it stopped and what to do.
+
+- **No account, and it never signs anyone in here.** The people it is for frequently cannot sign in
+  anywhere, which is why they came.
+- **The result page is public at an unguessable address**, so it can be handed to whoever runs their
+  site or wrote the app. Secrets in the HTTP log are redacted as everywhere else. Continuing the
+  login, and deleting the check, need the cookie set when it was started — without that, a checkup
+  could be started against any address and its `/go` link mailed out as an open redirector.
+- **Only `profile` is ever requested**, and only when the person ticks the box asking to check
+  access tokens as well. Any token issued is described, revoked where the server allows it, and
+  never stored.
+- Checkups reuse the `runs` table with `kind = 'checkup'`, so they get transcripts and pruning for
+  free, but they are never graded and never publishable as a report.
+- The wording lives in `src/Checkup/Steps/`, which are pure functions over what discovery and
+  redemption found, so the copy can be read and tested without a network or a database.
+
 ## Setup
 
 ```sh
@@ -90,7 +112,8 @@ bin/indieauth-rocks doctor
 
 **Deploying:**
 - Point both hostnames at `public/`, with every non-file request going to `index.php`. The app picks its routes by `Host` header.
-- Run `bin/indieauth-rocks prune` daily. It deletes unpublished runs older than `RUN_RETENTION_DAYS`.
+- Run `bin/indieauth-rocks prune` daily. It deletes unpublished runs older than `RUN_RETENTION_DAYS`,
+  and login checkups older than `CHECKUP_RETENTION_DAYS`.
 
 **For local development:**
 - `php -S 127.0.0.1:8095 -t public public/index.php` with `BASE_URL=http://localhost:8095/` and `ALT_BASE_URL=http://127.0.0.1:8095/` is enough for server tests.
@@ -116,7 +139,7 @@ bin/indieauth-rocks doctor
 | `catalog [--suite=server\|client] [--format=md]` | Print the test catalogs |
 | `run-server <profile-url> [--driver=indiekey] [--extended] [--slow] [--json]` | Run the server suite from the command line; exits non-zero on any failure |
 | `driver:indiekey:enroll --base=URL [--profile=URL]` | Create the account the IndieKey driver signs in with |
-| `prune` | Delete old unpublished runs |
+| `prune` | Delete old unpublished runs, and checkups older than `CHECKUP_RETENTION_DAYS` |
 
 **Unattended runs:** the browser steps are pluggable (`src/Drivers/UserAgentDriver.php`), so a driver can run the whole server suite with nobody watching. `IndieKeyDriver` signs in to [IndieKey](../myindieauth.com) with a software passkey and uses its consent screen.
 
@@ -154,6 +177,7 @@ Integration tests run the app in-process against a disposable `indieauthrocks_te
 ```
 public/            index.php, app.css, copy.js
 src/Bootstrap.php  services and routes for the main host, the second origin and the fixture host
+src/Checkup/       "Check your login": the walkthrough and its wording
 src/Engine/        catalogs, outcomes, runs, the token vault
 src/ServerTests/   ServerRunner, checks, probe grading, token flows
 src/ClientTests/   the test server, scenarios, evidence markers, grading

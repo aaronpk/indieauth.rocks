@@ -39,6 +39,7 @@ final class SiteConfig
         public readonly ?string $extraCaFile = null,
         public readonly int $sessionLifetime = 1_209_600,
         public readonly int $runRetentionDays = 30,
+        public readonly int $checkupRetentionDays = 7,
     ) {
         $this->baseUrl        = self::normalizeBase($baseUrl, 'BASE_URL');
         $this->altBaseUrl     = self::normalizeBase($altBaseUrl ?? $baseUrl, 'ALT_BASE_URL');
@@ -67,6 +68,7 @@ final class SiteConfig
             allowPrivateFetch:  Env::flag('ALLOW_PRIVATE_FETCH'),
             extraCaFile:        Env::get('EXTRA_CA_FILE'),
             runRetentionDays:   Env::int('RUN_RETENTION_DAYS', 30),
+            checkupRetentionDays: Env::int('CHECKUP_RETENTION_DAYS', 7),
         );
     }
 

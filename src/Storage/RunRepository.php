@@ -73,6 +73,12 @@ final class RunRepository
         );
     }
 
+    /** Exchanges and results go with it, by foreign key. */
+    public function delete(Run $run): void
+    {
+        $this->db->execute('DELETE FROM runs WHERE id = ?', [$run->id]);
+    }
+
     public function bindTester(Run $run, int $testerId): void
     {
         $this->db->execute('UPDATE runs SET tester_id = ? WHERE id = ? AND tester_id IS NULL', [$testerId, $run->id]);

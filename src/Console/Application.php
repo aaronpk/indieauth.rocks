@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IndieAuthRocks\Console;
 
 use IndieAuthRocks\Bootstrap;
+use IndieAuthRocks\Checkup\Checkup;
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Container;
 use IndieAuthRocks\Engine\Catalog;
@@ -22,7 +23,7 @@ final class Application
         'migrate' => 'Apply pending database migrations',
         'doctor'  => 'Check configuration, database, Redis and hostnames',
         'catalog' => 'List tests: catalog [--suite=server|client] [--format=text|md]',
-        'prune'   => 'Delete unpublished runs older than RUN_RETENTION_DAYS',
+        'prune'   => 'Delete unpublished runs older than RUN_RETENTION_DAYS, and checkups older than CHECKUP_RETENTION_DAYS',
         'run-server' => 'Run the server suite: run-server <profile-url> [--driver=indiekey] [--extended] [--json]',
         'driver:indiekey:enroll' => 'Create a driver account on an IndieKey server: --base=URL [--profile=URL]',
         'help'    => 'Show this list',
@@ -154,6 +155,16 @@ final class Application
         );
 
         $this->out->line(sprintf('Removed %d unpublished run(s) older than %d days.', $removed, $days));
+
+        // Checkups go sooner: each one diagnoses a single login, and its page is
+        // readable by anyone holding the link.
+        $checkupDays    = $this->container->get(SiteConfig::class)->checkupRetentionDays;
+        $checkupRemoved = $this->container->get(Database::class)->execute(
+            'DELETE FROM runs WHERE kind = ? AND created_at < ?',
+            [Checkup::KIND, Database::now(-$checkupDays * 86_400)],
+        );
+
+        $this->out->line(sprintf('Removed %d checkup(s) older than %d days.', $checkupRemoved, $checkupDays));
 
         return 0;
     }

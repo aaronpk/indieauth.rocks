@@ -10,6 +10,7 @@ use IndieAuthRocks\Controllers\AccountController;
 use IndieAuthRocks\Controllers\AltController;
 use IndieAuthRocks\ClientTests\Markers;
 use IndieAuthRocks\ClientTests\TestServer;
+use IndieAuthRocks\Checkup\Walkthrough;
 use IndieAuthRocks\Controllers\CatalogController;
 use IndieAuthRocks\Controllers\ClientRunController;
 use IndieAuthRocks\Controllers\FixtureController;
@@ -17,6 +18,7 @@ use IndieAuthRocks\Controllers\ReportController;
 use IndieAuthRocks\Storage\ReportRepository;
 use IndieAuthRocks\Controllers\TestServerController;
 use IndieAuthRocks\Controllers\ServerRunController;
+use IndieAuthRocks\Controllers\CheckupController;
 use IndieAuthRocks\Controllers\ClientDocsController;
 use IndieAuthRocks\Controllers\HomeController;
 use IndieAuthRocks\Controllers\SignInController;
@@ -158,6 +160,23 @@ final class Bootstrap
             $c->get(RateLimiter::class),
         ));
 
+        $container->set(Walkthrough::class, static fn (Container $c): Walkthrough => new Walkthrough(
+            $c->get(SiteConfig::class),
+            $c->get(RecordingHttpClient::class),
+            $c->get(RunRepository::class),
+            $c->get(RedisStore::class),
+        ));
+
+        $container->set(CheckupController::class, static fn (Container $c): CheckupController => new CheckupController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(Walkthrough::class),
+            $c->get(RunRepository::class),
+            $c->get(ExchangeRepository::class),
+            $c->get(RateLimiter::class),
+        ));
+
         $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
 
         $container->set(ReportRepository::class, static fn (Container $c): ReportRepository => new ReportRepository($c->get(Database::class)));
@@ -226,6 +245,15 @@ final class Bootstrap
         $router->post('/sign-in', [SignInController::class, 'start']);
         $router->get('/sign-in/callback', [SignInController::class, 'callback']);
         $router->get('/sign-in/client', [SignInController::class, 'client']);
+
+        // Checking a login, for the person whose login it is
+        $router->get('/check', [CheckupController::class, 'form']);
+        $router->post('/check', [CheckupController::class, 'start']);
+        $router->get('/check/callback', [CheckupController::class, 'callback']);
+        $router->get('/check/client', [CheckupController::class, 'clientDocument']);
+        $router->get('/check/{run}', [CheckupController::class, 'show']);
+        $router->get('/check/{run}/go', [CheckupController::class, 'go']);
+        $router->post('/check/{run}/delete', [CheckupController::class, 'delete']);
 
         $router->get('/account', [AccountController::class, 'show']);
         $router->post('/logout', [AccountController::class, 'logout']);

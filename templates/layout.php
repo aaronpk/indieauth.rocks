@@ -23,7 +23,9 @@
         <div class="bar">
             <a class="brand" href="<?= $home_url ?>"><span class="brand-mark" aria-hidden="true"></span><?= $site_name ?></a>
             <nav class="nav" aria-label="Main">
-                <a href="<?= $home_url ?>server-tests">Server tests</a>
+                <a href="<?= $home_url ?>check">Check your login</a>
+                <a href="<?= $home_url ?>check">Check your login</a>
+            <a href="<?= $home_url ?>server-tests">Server tests</a>
                 <a href="<?= $home_url ?>client-tests">Client tests</a>
                 <a href="<?= $home_url ?>implementations">Reports</a>
                 <?php if ($nav_user !== null) { ?>

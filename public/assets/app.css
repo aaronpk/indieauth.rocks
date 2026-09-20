@@ -732,3 +732,7 @@ table.results tr.is-next td:first-child { box-shadow: inset 3px 0 0 var(--accent
 .badge.checkup-unknown, .badge.checkup-pending, .badge.checkup-skipped { color: var(--muted); }
 
 .role-checkup form { max-width: 28rem; }
+
+/* An address in running text sits tighter than one in a fact list, so the
+   sentence's own full stop does not drift away from it. */
+.checkup-step p code, .page-header code { padding-inline: .2em; }

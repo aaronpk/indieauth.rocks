@@ -9,7 +9,7 @@
  */
 ?>
 <div class="page-header">
-    <p class="eyebrow"><a href="/check">Check your login</a> · <?= $checkup['target'] ?></p>
+    <p class="eyebrow"><a href="/check">Check your login</a> · <code><?= $checkup['target'] ?></code></p>
     <h1><?= $summary['headline'] ?></h1>
     <?php if ($summary['fix'] !== null) { ?>
         <p class="lede"><?= $summary['fix'] ?></p>

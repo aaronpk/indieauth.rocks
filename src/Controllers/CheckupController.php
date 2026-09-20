@@ -18,6 +18,7 @@ use IndieAuthRocks\Identity\Visitor;
 use IndieAuthRocks\Storage\ExchangeRepository;
 use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\RunRepository;
+use IndieAuthRocks\View\Prose;
 use IndieAuthRocks\View\Template;
 
 /**
@@ -278,8 +279,8 @@ final class CheckupController extends Controller
 
         return [
             'state'    => $summary->state->value,
-            'headline' => $summary->headline,
-            'fix'      => $summary->fix,
+            'headline' => Prose::html($summary->headline)['html'],
+            'fix'      => $summary->fix === null ? null : Prose::html($summary->fix)['html'],
             'notes'    => $summary->notesLine(),
         ];
     }

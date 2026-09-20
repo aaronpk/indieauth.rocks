@@ -32,8 +32,8 @@ final class SignInController extends Controller
 {
     private const PENDING_TTL  = 600;
     private const START_BUCKET = 'signin:ip';
-    private const START_LIMIT  = 20;
-    private const START_WINDOW = 600;
+    private const START_LIMIT  = 40;
+    private const START_WINDOW = 900;
     private const DEFAULT_NEXT = '/client-runs';
 
     public function __construct(

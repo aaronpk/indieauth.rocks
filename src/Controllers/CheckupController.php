@@ -29,14 +29,18 @@ use IndieAuthRocks\View\Template;
  */
 final class CheckupController extends Controller
 {
+    // Somebody sorting their site out checks, edits, and checks again, several
+    // times in a sitting, so these are set well above that: they exist to stop
+    // the tool being used to hammer somebody, not to ration ordinary use.
     private const IP_BUCKET     = 'checkup:ip';
-    private const IP_LIMIT      = 10;
-    private const IP_WINDOW     = 600;
+    private const IP_LIMIT      = 60;
+    private const IP_WINDOW     = 900;
     private const HOST_BUCKET   = 'checkup:host';
-    private const HOST_LIMIT    = 5;
+    private const HOST_LIMIT    = 30;
     private const HOST_WINDOW   = 3600;
     private const RETURN_BUCKET = 'checkup:back';
-    private const RETURN_LIMIT  = 30;
+    private const RETURN_LIMIT  = 120;
+    private const RETURN_WINDOW = 900;
 
     public function __construct(
         Template $view,
@@ -72,13 +76,13 @@ final class CheckupController extends Controller
         // One submission fetches a stranger's site several times, so limit both
         // who is asking and who is being asked about.
         if ($this->limiter->hit(self::IP_BUCKET, $request->ip, self::IP_WINDOW) > self::IP_LIMIT) {
-            throw new HttpException(429, 'Too many checks from your address. Try again in a few minutes.');
+            throw new HttpException(429, 'Too many checks from your address. ' . $this->tryAgain(self::IP_BUCKET, $request->ip));
         }
 
         $host = strtolower((string) parse_url(str_contains($typed, '://') ? $typed : 'https://' . $typed, PHP_URL_HOST));
 
         if ($host !== '' && $this->limiter->hit(self::HOST_BUCKET, $host, self::HOST_WINDOW) > self::HOST_LIMIT) {
-            throw new HttpException(429, 'That site has been checked several times in the last hour. Try again later.');
+            throw new HttpException(429, 'That site has been checked many times in the last hour. ' . $this->tryAgain(self::HOST_BUCKET, $host));
         }
 
         $secret  = Random::token(24);
@@ -163,8 +167,8 @@ final class CheckupController extends Controller
     {
         $visitor = $this->guard->begin($request);
 
-        if ($this->limiter->hit(self::RETURN_BUCKET, $request->ip, self::IP_WINDOW) > self::RETURN_LIMIT) {
-            throw new HttpException(429, 'Too many replies from your address. Try again in a few minutes.');
+        if ($this->limiter->hit(self::RETURN_BUCKET, $request->ip, self::RETURN_WINDOW) > self::RETURN_LIMIT) {
+            throw new HttpException(429, 'Too many replies from your address. ' . $this->tryAgain(self::RETURN_BUCKET, $request->ip));
         }
 
         $state   = (string) $request->query('state', '');
@@ -291,6 +295,19 @@ final class CheckupController extends Controller
             ], $status, $visitor)->withNoStore(),
             $visitor,
         );
+    }
+
+    /** When the limit lifts, so nobody has to guess what "later" means. */
+    private function tryAgain(string $bucket, string $key): string
+    {
+        $seconds = $this->limiter->retryAfter($bucket, $key);
+        $minutes = (int) ceil($seconds / 60);
+
+        return match (true) {
+            $seconds <= 0 => 'Try again shortly.',
+            $minutes <= 1 => 'Try again in a minute.',
+            default       => sprintf('Try again in %d minutes.', $minutes),
+        };
     }
 
     /** Things worth refusing before fetching anything at all. */

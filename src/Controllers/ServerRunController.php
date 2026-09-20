@@ -28,12 +28,14 @@ use IndieAuthRocks\View\Template;
 /** Server test runs in the browser. */
 final class ServerRunController extends Controller
 {
+    // Somebody fixing their server starts run after run; these are here to stop
+    // the site being used to flood a third party, not to pace that work.
     private const START_BUCKET = 'start:ip';
-    private const START_LIMIT  = 10;
-    private const START_WINDOW = 600;
+    private const START_LIMIT  = 30;
+    private const START_WINDOW = 900;
 
     private const RERUN_BUCKET = 'rerun:ip';
-    private const RERUN_LIMIT  = 20;
+    private const RERUN_LIMIT  = 60;
 
     public function __construct(
         Template $view,

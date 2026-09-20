@@ -192,14 +192,22 @@ final class CheckupTest extends AppTestCase
         $this->assertStringContainsString('looks like an email address', $page->body);
     }
 
-    public function test_too_many_checks_from_one_address_are_refused(): void
+    /**
+     * The limit is set well above what anyone sorting their site out will do,
+     * so this asserts that it exists and says when it lifts, not where it sits.
+     */
+    public function test_checking_over_and_over_is_eventually_refused(): void
     {
         $this->server();
 
-        for ($i = 0; $i < 10; $i++) {
-            $this->start();
+        $response = $this->start();
+
+        for ($i = 0; $i < 200 && $response->status === 303; $i++) {
+            $response = $this->start();
         }
 
-        $this->assertSame(429, $this->start()->status);
+        $this->assertSame(429, $response->status);
+        $this->assertStringContainsString('Try again in', $response->body);
+        $this->assertGreaterThan(20, $i, 'an ordinary run of checks should not hit the limit');
     }
 }

@@ -742,3 +742,16 @@ table.results tr.is-next td:first-child { box-shadow: inset 3px 0 0 var(--accent
 .restart-form .hint { margin: 0; }
 a.badge { text-decoration: none; }
 a.badge:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Admin pages: figures and bar charts (inline SVG; the CSP allows no inline style). */
+.bars { display: block; margin: .5rem 0 .25rem; max-width: 100%; height: auto; }
+.bars .bar { fill: var(--accent); }
+.bars .bar-label { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+
+.period { display: flex; flex-wrap: wrap; gap: .75rem; }
+.period [aria-current] { font-weight: 600; }
+
+.admin-table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+.admin-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: .8125rem; }
+.admin-table th, .admin-table td { padding: .4rem .75rem .4rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.admin-table .num { text-align: right; font-variant-numeric: tabular-nums; }

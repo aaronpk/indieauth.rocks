@@ -49,6 +49,15 @@ $current = static fn (string $key): string => $key === $section ? ' aria-current
                     <a href="<?= $home_url ?>client-tests"<?= $current('client-tests') ?>>Client tests</a>
                     <a href="<?= $home_url ?>implementations"<?= $current('reports') ?>>Reports</a>
                 </div>
+                <?php if ($nav_admin ?? false) { ?>
+                    <div class="menu-group">
+                        <p class="menu-heading">Admin</p>
+                        <a href="<?= $home_url ?>admin"<?= $current('admin') ?>>Overview</a>
+                        <a href="<?= $home_url ?>admin/checkups"<?= $current('admin-checkups') ?>>Checkups</a>
+                        <a href="<?= $home_url ?>admin/server-tests"<?= $current('admin-server') ?>>Server tests</a>
+                        <a href="<?= $home_url ?>admin/client-tests"<?= $current('admin-client') ?>>Client tests</a>
+                    </div>
+                <?php } ?>
                 <div class="menu-group menu-footer">
                     <?php if ($nav_user !== null) { ?>
                         <p class="menu-user">Signed in as <strong><?= $nav_user ?></strong></p>

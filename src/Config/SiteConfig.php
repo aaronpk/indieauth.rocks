@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace IndieAuthRocks\Config;
 
+use IndieAuthRocks\IndieAuth\Discovery;
+
 /**
  * Everything site-specific, read from the environment (usually .env).
  *
@@ -40,6 +42,13 @@ final class SiteConfig
         public readonly int $sessionLifetime = 1_209_600,
         public readonly int $runRetentionDays = 30,
         public readonly int $checkupRetentionDays = 7,
+        /**
+         * Profile URLs that may open the admin pages. Nothing in the database
+         * grants this; only the deployment can.
+         *
+         * @var list<string>
+         */
+        public readonly array $adminUsers = [],
     ) {
         $this->baseUrl        = self::normalizeBase($baseUrl, 'BASE_URL');
         $this->altBaseUrl     = self::normalizeBase($altBaseUrl ?? $baseUrl, 'ALT_BASE_URL');
@@ -69,6 +78,7 @@ final class SiteConfig
             extraCaFile:        Env::get('EXTRA_CA_FILE'),
             runRetentionDays:   Env::int('RUN_RETENTION_DAYS', 30),
             checkupRetentionDays: Env::int('CHECKUP_RETENTION_DAYS', 7),
+            adminUsers:           Env::list('ADMIN_USERS'),
         );
     }
 
@@ -109,6 +119,30 @@ final class SiteConfig
             $this->fixtureBaseUrl !== null && $authority === self::authority($this->fixtureBaseUrl) => 'fixture',
             default                                                                                     => null,
         };
+    }
+
+    /**
+     * Whether this profile URL may open the admin pages.
+     *
+     * Both sides go through the site's own rule for what somebody typed means,
+     * so ADMIN_USERS can say example.com and match the https://example.com/
+     * that signing in records.
+     */
+    public function isAdmin(?string $me): bool
+    {
+        if ($me === null || $me === '' || $this->adminUsers === []) {
+            return false;
+        }
+
+        $me = Discovery::normalizeInput($me);
+
+        foreach ($this->adminUsers as $admin) {
+            if (Discovery::normalizeInput($admin) === $me) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function secureCookies(): bool

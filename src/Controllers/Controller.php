@@ -40,6 +40,7 @@ abstract class Controller
             'home_url'  => $this->config->baseUrl,
             'nav_user'  => $visitor?->user?->displayName(),
             'nav_csrf'  => $visitor?->user !== null ? $visitor->session?->csrf : null,
+            'nav_admin' => $this->config->isAdmin($visitor?->user?->me),
         ];
 
         return Response::html($this->view->render('layout', $shared + [

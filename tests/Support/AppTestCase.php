@@ -116,6 +116,36 @@ abstract class AppTestCase extends TestCase
         return $this->container->get(SiteConfig::class);
     }
 
+    /**
+     * Make these profile URLs admins.
+     *
+     * Admin is a deployment setting, so there is nothing to give a tester in
+     * the database: the container's SiteConfig is replaced instead. Services
+     * resolve lazily, so this takes effect on the next request.
+     */
+    protected function adminIs(string ...$profiles): void
+    {
+        $base   = $this->config();
+        $config = new SiteConfig(
+            siteName:    $base->siteName,
+            baseUrl:     $base->baseUrl,
+            altBaseUrl:  $base->altBaseUrl,
+            dbHost:      $base->dbHost,
+            dbPort:      $base->dbPort,
+            dbName:      $base->dbName,
+            dbUser:      $base->dbUser,
+            dbPass:      $base->dbPass,
+            redisHost:   $base->redisHost,
+            redisPort:   $base->redisPort,
+            redisDb:     $base->redisDb,
+            redisPrefix: $base->redisPrefix,
+            appSecret:   $base->appSecret,
+            adminUsers:  array_values($profiles),
+        );
+
+        $this->container->set(SiteConfig::class, static fn (): SiteConfig => $config);
+    }
+
     /** Dispatch a request to the app in-process, carrying cookies. */
     protected function request(string $method, string $url, array $post = [], array $headers = []): Response
     {

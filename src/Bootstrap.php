@@ -7,6 +7,7 @@ namespace IndieAuthRocks;
 use IndieAuthRocks\Config\Env;
 use IndieAuthRocks\Config\SiteConfig;
 use IndieAuthRocks\Controllers\AccountController;
+use IndieAuthRocks\Controllers\AdminController;
 use IndieAuthRocks\Controllers\AltController;
 use IndieAuthRocks\ClientTests\Markers;
 use IndieAuthRocks\ClientTests\TestServer;
@@ -36,6 +37,7 @@ use IndieAuthRocks\Storage\RateLimiter;
 use IndieAuthRocks\Storage\RedisStore;
 use IndieAuthRocks\Storage\ResultRepository;
 use IndieAuthRocks\Storage\RunRepository;
+use IndieAuthRocks\Storage\StatsRepository;
 use IndieAuthRocks\Storage\TesterRepository;
 use IndieAuthRocks\View\Template;
 
@@ -177,6 +179,15 @@ final class Bootstrap
             $c->get(RateLimiter::class),
         ));
 
+        $container->set(StatsRepository::class, static fn (Container $c): StatsRepository => new StatsRepository($c->get(Database::class)));
+
+        $container->set(AdminController::class, static fn (Container $c): AdminController => new AdminController(
+            $c->get(Template::class),
+            $c->get(SiteConfig::class),
+            $c->get(Guard::class),
+            $c->get(StatsRepository::class),
+        ));
+
         $container->set(FixtureController::class, static fn (): FixtureController => new FixtureController());
 
         $container->set(ReportRepository::class, static fn (Container $c): ReportRepository => new ReportRepository($c->get(Database::class)));
@@ -254,6 +265,12 @@ final class Bootstrap
         $router->get('/check/{run}', [CheckupController::class, 'show']);
         $router->get('/check/{run}/go', [CheckupController::class, 'go']);
         $router->post('/check/{run}/delete', [CheckupController::class, 'delete']);
+
+        // Admin: read-only, every route a GET.
+        $router->get('/admin', [AdminController::class, 'overview']);
+        $router->get('/admin/checkups', [AdminController::class, 'checkups']);
+        $router->get('/admin/server-tests', [AdminController::class, 'serverTests']);
+        $router->get('/admin/client-tests', [AdminController::class, 'clientTests']);
 
         $router->get('/account', [AccountController::class, 'show']);
         $router->post('/logout', [AccountController::class, 'logout']);

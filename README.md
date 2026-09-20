@@ -95,6 +95,21 @@ back, and the exchange of the code — saying in plain words where it stopped an
 - The wording lives in `src/Checkup/Steps/`, which are pure functions over what discovery and
   redemption found, so the copy can be read and tested without a network or a database.
 
+## Admin
+
+Set `ADMIN_USERS` to one or more profile URLs, comma-separated, and those people get an **Admin**
+group in the menu: an overview of activity across the site, and a dashboard each for login checks,
+server tests and client tests — volume over time, and what fails most. Nothing in the database
+grants this; only the deployment can.
+
+An admin can read every run through the ordinary pages, marked as an admin view, and can change
+none of it: the whole section is GET-only, driving a run still needs the browser that started it,
+and a client run's PIN stays with its tester, since knowing it approves sign-ins in that run.
+
+What an admin sees is what is still kept — `prune` deletes unpublished runs after
+`RUN_RETENTION_DAYS` and checkups after `CHECKUP_RETENTION_DAYS`, which is a privacy control as much
+as a storage one.
+
 ## Setup
 
 ```sh

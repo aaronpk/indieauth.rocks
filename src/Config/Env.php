@@ -62,6 +62,25 @@ final class Env
         return in_array(strtolower($value), ['1', 'true', 'yes', 'on'], true);
     }
 
+    /**
+     * A comma-separated setting, trimmed, with empties dropped.
+     *
+     * @return list<string>
+     */
+    public static function list(string $name): array
+    {
+        $value = self::get($name);
+
+        if ($value === null) {
+            return [];
+        }
+
+        return array_values(array_filter(
+            array_map(static fn (string $item): string => trim($item), explode(',', $value)),
+            static fn (string $item): bool => $item !== '',
+        ));
+    }
+
     public static function int(string $name, int $default): int
     {
         $value = self::get($name);

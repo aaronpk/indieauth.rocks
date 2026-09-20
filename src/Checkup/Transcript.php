@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IndieAuthRocks\Checkup;
 
 use IndieAuthRocks\View\ExchangeRows;
+use IndieAuthRocks\View\InlineLinks;
 
 /**
  * Puts each recorded request under the step it belongs to.
@@ -38,6 +39,10 @@ final class Transcript
                 $mine[]    = $row;
             }
 
+            // A link to something the advice names reads better on the name
+            // itself than as a bare address underneath it.
+            $fix = $step->fix === null ? null : InlineLinks::in($step->fix, $step->links);
+
             $out[] = [
                 'id'        => $step->id,
                 'title'     => $step->title,
@@ -47,8 +52,8 @@ final class Transcript
                 'headline'  => $step->headline,
                 'facts'     => $step->facts,
                 'meaning'   => $step->meaning,
-                'fix'       => $step->fix,
-                'links'     => $step->links,
+                'fix'       => $fix === null ? null : $fix['html'],
+                'links'     => $fix === null ? $step->links : $fix['rest'],
                 'exchanges' => $mine,
             ];
         }

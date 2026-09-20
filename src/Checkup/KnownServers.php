@@ -61,14 +61,20 @@ final class KnownServers
 
     /**
      * Anything the person should know about the server they are using, beyond
-     * that it works.
+     * that it works — with somewhere to go about it, rather than an
+     * instruction to go looking.
+     *
+     * @return array{headline: string, fix: string, links: list<array{text: string, url: string}>}|null
      */
-    public static function noteAbout(?string $url): ?string
+    public static function noteAbout(?string $url): ?array
     {
         return match (self::hostOf($url)) {
-            'indieauth.com' => 'Your site uses IndieAuth.com as its IndieAuth server. That service is being '
-                . 'retired, so your login will keep working for now but not forever. Its home page names the '
-                . 'replacement and explains how to move.',
+            'indieauth.com' => [
+                'headline' => 'Your site uses IndieAuth.com as its IndieAuth server. That service is being '
+                    . 'retired, so your login will keep working for now but not forever.',
+                'fix'   => 'Move your site to IndieKey, which replaces it.',
+                'links' => [['text' => 'IndieKey', 'url' => 'https://indiekey.id/migrate']],
+            ],
             default => null,
         };
     }

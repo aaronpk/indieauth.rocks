@@ -37,6 +37,23 @@ final class DiscoveryStepsTest extends TestCase
         $this->assertSame('https://server.example/auth', $this->step($steps, 'endpoints')->facts['Where you approve logins']);
     }
 
+    /** A page can carry several link relations; the step says which one found the server. */
+    public function test_the_link_relation_that_found_the_server_is_named(): void
+    {
+        $step = $this->step(DiscoverySteps::from($this->discovery(), 'example.com'), 'server-link');
+
+        $this->assertSame('rel="indieauth-metadata"', $step->facts['Link relation']);
+        $this->assertStringContainsString('rel="indieauth-metadata"', $step->headline);
+        $this->assertSame('a <link> tag in your page\'s <head>', $step->facts['Found in']);
+
+        $legacy = $this->step(
+            DiscoverySteps::from($this->discovery(metadataUrl: null, legacy: 'https://server.example/auth'), 'example.com'),
+            'server-link',
+        );
+
+        $this->assertSame('https://server.example/auth', $legacy->facts['rel="authorization_endpoint"']);
+    }
+
     public function test_a_site_with_no_metadata_link_is_told_what_to_add(): void
     {
         $step = $this->step(DiscoverySteps::from($this->discovery(metadataUrl: null), 'example.com'), 'server-link');
@@ -172,6 +189,10 @@ final class DiscoveryStepsTest extends TestCase
         $this->assertSame(StepState::Note, $step->state);
         $this->assertStringContainsString('being', $step->headline);
         $this->assertStringContainsString('retired', $step->headline);
+
+        // Somewhere to go, rather than an instruction to go looking.
+        $this->assertSame([['text' => 'IndieKey', 'url' => 'https://indiekey.id/migrate']], $step->links);
+        $this->assertStringContainsString('IndieKey', (string) $step->fix);
     }
 
     /**

@@ -205,14 +205,17 @@ final class DiscoverySteps
         $title = 'Finding which server handles your login';
 
         if ($d->metadataUrl !== null) {
-            $where = $d->headerMetadata !== [] ? 'in the Link header of your page' : 'in a <link> tag in your page\'s <head>';
+            $where = $d->headerMetadata !== [] ? 'the Link header of your page' : 'a <link> tag in your page\'s <head>';
             $step  = new Step(
                 id: 'server-link',
                 title: $title,
                 state: StepState::Ok,
-                headline: sprintf('Your page points at %s, found %s.', $d->metadataUrl, $where),
+                headline: sprintf('Your page points at %s with rel="indieauth-metadata", found in %s.', $d->metadataUrl, $where),
                 facts: array_filter([
                     'Your server\'s settings' => $d->metadataUrl,
+                    // Which relation was matched, since a page can carry
+                    // several and only this one names the current server.
+                    'Link relation'           => 'rel="indieauth-metadata"',
                     'Found in'                => $where,
                 ]),
             );
@@ -245,7 +248,12 @@ final class DiscoverySteps
                 title: $title,
                 state: StepState::Problem,
                 headline: 'Your page has an indieauth-metadata link, but it is in the body rather than the <head>.',
-                facts: ['Link found' => (string) reset($inBody), 'Where it is' => 'in the page body', 'Where it has to be' => 'in the <head>'],
+                facts: [
+                    'Link relation'       => 'rel="indieauth-metadata"',
+                    'Where it points'     => (string) reset($inBody),
+                    'Where it is'         => 'the page body',
+                    'Where it has to be'  => 'the <head>',
+                ],
                 meaning: 'Apps only trust this link when it is in the <head>, because anything in the body may '
                     . 'have been put there by somebody else — a comment, a bio, a quoted page.',
                 fix: 'Move the <link> tag up into the <head> section of your page and this will start working.',
@@ -259,8 +267,8 @@ final class DiscoverySteps
                 state: StepState::Note,
                 headline: 'Your page uses the older authorization_endpoint link rather than indieauth-metadata.',
                 facts: array_filter([
-                    'Authorization endpoint' => $d->legacyAuthorizationEndpoint,
-                    'Token endpoint'         => $d->legacyTokenEndpoint,
+                    'rel="authorization_endpoint"' => $d->legacyAuthorizationEndpoint,
+                    'rel="token_endpoint"'         => $d->legacyTokenEndpoint,
                 ]),
                 meaning: 'Apps written before the current specification will still sign you in. Newer ones look '
                     . 'for the metadata link first, and some of them will not fall back to this.',
@@ -395,8 +403,10 @@ final class DiscoverySteps
                 id: 'endpoints',
                 title: $title,
                 state: StepState::Note,
-                headline: $known,
+                headline: $known['headline'],
                 facts: $facts,
+                fix: $known['fix'],
+                links: $known['links'],
             );
         }
 

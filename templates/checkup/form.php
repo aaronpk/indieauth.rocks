@@ -7,12 +7,12 @@
 ?>
 <div class="page-header">
     <p class="eyebrow">Check your login</p>
-    <h1>Find out why signing in with your website isn't working</h1>
+    <h1>See how your website signs you in, step by step</h1>
     <p class="lede">
-        Enter your website address and this will do exactly what an app does when you sign in with it —
-        read your home page, find your IndieAuth server, send you there to approve, and check what comes
-        back — showing you every step. When something is wrong, it says which step failed and what to do
-        about it.
+        Enter your website address and this does exactly what an app does when it signs you in — reads
+        your home page, finds your IndieAuth server, sends you there to approve, and checks what comes
+        back — showing you every step as it happens. Each step says what it found, and what to change
+        if one of them needs it.
     </p>
 </div>
 

@@ -134,8 +134,9 @@ final class Application
         }
 
         try {
-            $this->container->get(RedisStore::class)->ping();
-            $this->out->pass('Redis reachable');
+            $redis = $this->container->get(RedisStore::class);
+            $redis->ping();
+            $this->out->pass('Redis reachable', $redis->version());
         } catch (Throwable $e) {
             $this->out->fail('Redis', $e->getMessage());
             $failures++;

@@ -129,9 +129,20 @@ final class RedisStore
      *
      * @return array<string, mixed>|null
      */
+    /**
+     * Read a value and delete it in one step.
+     *
+     * A transaction rather than GETDEL, which needs Redis 6.2: phpredis answers
+     * an unknown command with false, which is indistinguishable here from a key
+     * that was never there, so an older server turned every one-shot record —
+     * a pending sign-in, a checkup waiting for its reply — into "expired, or
+     * started in another browser".
+     */
     public function takeJson(string $key): ?array
     {
-        $raw = $this->call(fn (): mixed => $this->client->getDel($this->prefix . $key));
+        $prefixed = $this->prefix . $key;
+        $result   = $this->call(fn (): mixed => $this->client->multi()->get($prefixed)->del($prefixed)->exec());
+        $raw      = is_array($result) ? ($result[0] ?? null) : null;
 
         return is_string($raw) ? $this->decode($raw) : null;
     }
@@ -206,10 +217,20 @@ final class RedisStore
         $this->call(fn (): mixed => $this->client->ping());
     }
 
+    /** The server's version, for the doctor to report. */
+    public function version(): string
+    {
+        $info = $this->call(fn (): mixed => $this->client->info('server'));
+
+        return is_array($info) && is_string($info['redis_version'] ?? null) ? $info['redis_version'] : 'unknown';
+    }
+
     private function call(Closure $command): mixed
     {
         try {
-            return $command();
+            $this->client->clearLastError();
+
+            return $this->checked($command());
         } catch (RedisException $e) {
             if ($this->reopen === null || !self::isStaleConnection($e)) {
                 throw new StorageUnavailableException('Redis command failed: ' . $e->getMessage(), $e);
@@ -223,11 +244,30 @@ final class RedisStore
         // $this->client when they run, so the retry uses the new one.
         try {
             $this->client = ($this->reopen)();
+            $this->client->clearLastError();
 
-            return $command();
+            return $this->checked($command());
         } catch (RedisException $e) {
             throw new StorageUnavailableException('Redis command failed after reconnecting: ' . $e->getMessage(), $e);
         }
+    }
+
+    /**
+     * phpredis reports a server-side error by returning false and remembering
+     * the message, so a command this server does not know looks exactly like a
+     * missing key. Anything left in there is an outage, not an absence.
+     */
+    private function checked(mixed $result): mixed
+    {
+        $error = $this->client->getLastError();
+
+        if ($error === null) {
+            return $result;
+        }
+
+        $this->client->clearLastError();
+
+        throw new StorageUnavailableException('Redis command failed: ' . $error);
     }
 
     /** The errors phpredis reports for a connection that has gone bad, as opposed to a refused one. */

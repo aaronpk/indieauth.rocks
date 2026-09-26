@@ -20,6 +20,17 @@ final class HomeController extends Controller
         ], visitor: $visitor), $visitor);
     }
 
+    /** @param array<string, string> $params */
+    public function micropub(Request $request, array $params = []): Response
+    {
+        return Response::json([
+            'syndicate-to' => [],
+            'categories'   => [],
+            'channels'     => [],
+            'post-types'   => [],
+        ]);
+    }
+
     /**
      * The root of the alternate origin. Nothing lives here; tests only use
      * specific paths on this host.

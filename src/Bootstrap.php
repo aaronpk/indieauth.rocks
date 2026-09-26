@@ -247,6 +247,7 @@ final class Bootstrap
         $router = new Router();
 
         $router->get('/', [HomeController::class, 'index']);
+        $router->get('/micropub', [HomeController::class, 'micropub']);
         $router->get('/server-tests', [CatalogController::class, 'serverTests']);
         $router->get('/client-tests', [CatalogController::class, 'clientTests']);
         $router->get('/tests/{id}', [CatalogController::class, 'test']);

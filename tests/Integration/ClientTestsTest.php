@@ -134,6 +134,28 @@ final class ClientTestsTest extends AppTestCase
         }
     }
 
+    public function test_client_test_profiles_advertise_the_dummy_micropub_endpoint(): void
+    {
+        $profile = $this->request('GET', $this->urls->profile(101));
+
+        $this->assertMatchesRegularExpression('/<link rel="micropub" href="([^"]+)">/', $profile->body);
+        preg_match('/<link rel="micropub" href="([^"]+)">/', $profile->body, $match);
+
+        $endpoint = html_entity_decode($match[1] ?? '', ENT_QUOTES | ENT_HTML5);
+        $this->assertSame($this->config()->url('micropub'), $endpoint);
+
+        $response = $this->request('GET', $endpoint);
+
+        $this->assertSame(200, $response->status);
+        $this->assertSame('application/json; charset=utf-8', $response->header('content-type'));
+        $this->assertSame([
+            'syndicate-to' => [],
+            'categories'   => [],
+            'channels'     => [],
+            'post-types'   => [],
+        ], json_decode($response->body, true, flags: JSON_THROW_ON_ERROR));
+    }
+
     /** @return iterable<string, array{0: string, 1: list<int>, 2: list<string>}> */
     public static function defects(): iterable
     {

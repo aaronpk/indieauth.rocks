@@ -86,7 +86,7 @@ final class TestServer
             return Response::html('Not found', 404);
         }
 
-        $head     = '';
+        $head     = sprintf('<link rel="micropub" href="%s">', htmlspecialchars($this->config->url('micropub')));
         $rel      = $scenario->multiRel ? 'me indieauth-metadata' : 'indieauth-metadata';
         $response = null;
 
